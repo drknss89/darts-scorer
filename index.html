@@ -221,6 +221,10 @@ h1 .ring{width:26px;height:26px;border-radius:50%;background:radial-gradient(cir
 .hlist{display:flex;flex-direction:column;gap:6px}
 .hrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
 
+.ordiv{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}
+.ordiv::before,.ordiv::after{content:"";flex:1;height:1px;background:var(--line)}
+.gbtn{padding:14px;border-radius:10px;background:#fff;color:#1f1f1f;font-weight:600;font-size:17px;border:1px solid #dadce0}
+
 /* bar + entry + keypad */
 .bar{display:grid;grid-template-columns:44px 1fr auto 44px;align-items:center;gap:8px;margin:0 6px;padding:6px 8px;border-radius:10px 10px 0 0;background:linear-gradient(#c8102e,#8e0b1f)}
 .bar .ib{width:36px;height:34px;border-radius:6px;display:grid;place-items:center;font-size:20px;font-weight:700;background:rgba(0,0,0,.25);color:#fff}
@@ -893,7 +897,9 @@ function authError(e){
   if(c.includes("weak-password")) return "Use a password with at least 6 characters.";
   if(c.includes("too-many-requests")) return "Too many tries. Wait a minute and try again.";
   if(c.includes("network")) return "No connection. Check your internet and try again.";
-  if(c.includes("operation-not-allowed")) return "Email sign-in isn't switched on in Firebase yet.";
+  if(c.includes("operation-not-allowed")) return "That sign-in method isn't switched on in Firebase yet.";
+  if(c.includes("unauthorized-domain")) return "This website isn't approved for Google sign-in yet. Add it under Authorized domains in Firebase.";
+  if(c.includes("account-exists-with-different-credential")) return "That email already has an account. Log in with your email and password.";
   return "Something went wrong. Try again.";
 }
 async function startAuth(){
@@ -932,6 +938,18 @@ async function doAuth(kind){
       await fb.ref(`users/${cred.user.uid}`).update({ name, created: Date.now() });
     } else await firebase.auth().signInWithEmailAndPassword(email.trim(), pass);
   }catch(e){ authMsg = authError(e); }
+  authBusy = false; render();
+}
+async function googleLogin(){
+  authBusy = true; authMsg = ""; render();
+  const prov = new firebase.auth.GoogleAuthProvider();
+  prov.setCustomParameters({ prompt:"select_account" });
+  try{ await firebase.auth().signInWithPopup(prov); }
+  catch(e){
+    const c = (e && e.code) || "";
+    if(c.includes("popup-blocked") || c.includes("operation-not-supported")){ try{ await firebase.auth().signInWithRedirect(prov); return; }catch(e2){ authMsg = authError(e2); } }
+    else if(!c.includes("popup-closed") && !c.includes("cancelled-popup")) authMsg = authError(e);
+  }
   authBusy = false; render();
 }
 async function saveEditing(){
@@ -1023,6 +1041,8 @@ function renderAuth(){
         <button type="submit" class="primary" ${authBusy?"disabled":""}>${authBusy ? "One moment…" : su ? "Create account" : "Log in"}</button>
         ${su ? "" : `<button type="button" class="rulesbtn" data-act="forgot">Forgot your password?</button>`}
       </form>
+      <div class="ordiv"><span>or</span></div>
+      <button type="button" class="gbtn" data-act="google" ${authBusy?"disabled":""}>Continue with Google</button>
     </div>
     <div class="hint" style="text-align:center">Your stats are saved to your account, so they follow you to any phone.</div>
   </div>`;
@@ -2134,6 +2154,7 @@ app.addEventListener("click", e=>{
     case "closeSummary": dialog = null; summaryHtml = null; screen = profilesOn() ? "home" : "setup"; render(); break;
     case "resume": goOffline(); screen = "game"; render(); break;
     case "forgot": doAuth("forgot"); break;
+    case "google": googleLogin(); break;
     case "logout": askConfirm("You'll need your email and password to log back in.", "Log out", async()=>{ goOffline(); await firebase.auth().signOut(); }); break;
     case "home": dialog = null; screen = "home"; render(); break;
     case "modeLocal": mode = "local"; goOffline(); screen = "setup"; if(!(settings.links||[]).some(Boolean) && meKey()) setLink(0, meKey()); render(); break;
