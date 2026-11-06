@@ -1,0 +1,1467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b0c">
+<title>Darts Scorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Scoreboard look: black field, red active-player bar, white score panel; keypad docked at the bottom for thumbs. */
+:root{
+  --bg:#0b0b0c;
+  --panel:#18181b;
+  --panel-2:#2a2a2f;
+  --line:#3a3a42;
+  --chalk:#f2f0ea;
+  --muted:#9a9aa3;
+  --red:#c8102e;
+  --red-dark:#6f0a19;
+  --green:#0d6b35;
+  --gold:#d9c21a;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--chalk);font-family:var(--body);font-size:16px;-webkit-tap-highlight-color:transparent;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;touch-action:manipulation}
+button:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+button:disabled{opacity:.35;cursor:not-allowed}
+
+/* ---------- setup ---------- */
+.wrap{max-width:620px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:16px}
+h1{font-family:var(--display);font-weight:800;font-size:36px;letter-spacing:.02em;margin:0;display:flex;align-items:center;gap:10px}
+h1 .ring{width:26px;height:26px;border-radius:50%;background:radial-gradient(circle,var(--red) 0 22%,var(--green) 23% 40%,var(--chalk) 41% 58%,#000 59% 100%);flex:none;border:1px solid var(--line)}
+.label{font-family:var(--display);font-weight:600;font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.seg{display:flex;flex-wrap:wrap;gap:8px}
+.seg button{flex:1 1 0;min-width:64px;padding:12px 8px;border-radius:8px;background:var(--panel-2);border:1px solid var(--line);font-family:var(--display);font-weight:700;font-size:20px}
+.seg button[aria-pressed="true"]{background:var(--red);border-color:var(--red);color:#fff}
+.seg.small button{font-size:17px;padding:10px 6px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.stepper{display:flex;align-items:center;gap:6px}
+.stepper button{width:44px;height:44px;border-radius:8px;background:var(--panel-2);border:1px solid var(--line);font-size:22px;font-weight:600}
+.stepper output{min-width:42px;text-align:center;font-family:var(--display);font-weight:700;font-size:26px;font-variant-numeric:tabular-nums}
+.hint{color:var(--muted);font-size:14px}
+.players{display:flex;flex-direction:column;gap:8px}
+.prow{display:flex;gap:8px;align-items:center}
+.prow input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--chalk);padding:12px;font:inherit;font-size:17px}
+.prow .x{width:44px;height:44px;border-radius:8px;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);font-size:20px}
+.ghost{padding:12px;border-radius:8px;border:1px dashed var(--line);color:var(--muted);font-weight:600}
+.primary{padding:16px;border-radius:10px;background:var(--red);color:#fff;font-family:var(--display);font-weight:800;font-size:24px;letter-spacing:.06em;text-transform:uppercase}
+.secondary{padding:14px;border-radius:10px;background:var(--panel-2);border:1px solid var(--line);font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.04em}
+.resume{border-color:var(--gold)}
+.resume strong{color:var(--gold);font-family:var(--display);font-size:20px}
+
+/* ---------- game shell ---------- */
+#app{height:100%}
+.game{max-width:620px;margin:0 auto;height:100%;display:flex;flex-direction:column;overflow:hidden}
+.game > *{flex:none}
+.game > .board{flex:1 1 auto;min-height:60px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.hdr{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:6px;padding:8px 8px 6px;border-bottom:2px solid var(--chalk)}
+.hdr.many{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+.side{display:flex;flex-direction:column;min-width:0}
+.nmbar{background:transparent;color:var(--muted);font-family:var(--display);font-weight:800;font-size:28px;line-height:1.15;text-align:center;padding:2px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.side.active .nmbar{background:var(--red);color:#fff}
+.scorebox{display:flex;align-items:center;gap:6px;padding:2px 8px;min-height:84px}
+.side.R .scorebox{flex-direction:row-reverse}
+.side.active .scorebox{background:#ececec;color:#111}
+.stk{display:flex;flex-direction:column;gap:2px;font-family:var(--display);font-weight:600;font-size:21px;line-height:1.1;font-variant-numeric:tabular-nums;min-width:34px}
+.side.R .stk{text-align:right}
+.stk .avg{color:var(--red)}
+.side.active .stk .avg{color:var(--red)}
+.big{flex:1;text-align:center;font-family:var(--display);font-weight:800;font-size:68px;line-height:1;font-variant-numeric:tabular-nums}
+.many .big{font-size:52px}
+.mid{display:flex;flex-direction:column;align-items:center;gap:4px;padding-top:4px}
+.rnd{min-width:58px;height:58px;padding:0 8px;border-radius:10px;background:linear-gradient(#d4142f,#8e0b1f);display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:42px;color:#fff;box-shadow:0 2px 0 #4a0610}
+.mode{font-family:var(--display);font-weight:800;font-size:18px;color:var(--gold);letter-spacing:.04em;text-align:center}
+.roundline{display:flex;justify-content:center;gap:12px;align-items:center;padding:6px;font-family:var(--display);font-weight:700;font-size:18px}
+.roundline .mode{font-size:16px}
+.board{flex:1;overflow-y:auto;min-height:0;position:relative}
+
+/* 01 history */
+.hist{width:100%;border-collapse:collapse;font-family:var(--display);font-variant-numeric:tabular-nums;table-layout:fixed}
+.hist td{padding:3px 6px;text-align:center;font-size:24px;font-weight:600}
+.hist td.sc{color:var(--muted);font-size:20px}
+.hist td.lf{font-weight:700}
+.hist td.rn{width:64px;color:var(--muted);font-size:20px;border-left:3px solid #8c8c93;border-right:3px solid #8c8c93}
+.hist td.bust{color:var(--red);font-size:18px;font-weight:700;letter-spacing:.04em}
+.hist tr.start td{color:var(--muted)}
+.hist th{font-family:var(--body);font-size:13px;font-weight:600;color:var(--muted);padding:6px 4px 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist td.cell{font-size:22px}
+.hist td.cell small{display:block;color:var(--muted);font-size:15px;line-height:1}
+
+/* cricket grid */
+.cg{display:grid;gap:6px 6px;padding:10px 8px;align-items:center}
+.cg .mk{display:grid;place-items:center;height:52px}
+.cg .mk svg{width:40px;height:40px}
+.cg .lbl{font-size:12px;color:var(--muted);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cnum{height:56px;border-radius:8px;background:linear-gradient(#d4142f,#8e0b1f);color:#fff;font-family:var(--display);font-weight:800;font-size:46px;line-height:1;
+  box-shadow:0 2px 0 #4a0610;text-shadow:0 0 8px rgba(255,255,255,.35)}
+.cmod{height:38px;border-radius:6px;background:linear-gradient(#d4142f,#8e0b1f);color:#fff;font-family:var(--display);font-weight:800;font-size:22px;box-shadow:0 2px 0 #4a0610}
+.cg .dead{opacity:.3}
+.cg .pts{font-family:var(--display);font-weight:700;font-size:18px;color:var(--muted);text-align:center}
+
+/* killer */
+.kl{display:flex;flex-direction:column;gap:6px;padding:10px 8px}
+.kr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.kr.play{grid-template-columns:minmax(0,1fr) 50px 68px 50px}
+.kr.active{border-color:var(--red);box-shadow:inset 5px 0 0 var(--red);background:#241316}
+.kr.out{opacity:.35}
+.kinfo{display:flex;flex-direction:column;gap:4px;min-width:0;padding-left:4px}
+.kname{font-family:var(--display);font-weight:800;font-size:24px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ksub{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pips{display:flex;gap:4px}
+.pip{width:15px;height:15px;border-radius:50%;border:2px solid #6a6a72}
+.pip.on{background:var(--gold);border-color:var(--gold)}
+.skull{width:36px;height:40px;vertical-align:middle;margin-left:4px;filter:drop-shadow(0 0 4px rgba(255,90,0,.7))}
+.skull circle{filter:drop-shadow(0 0 2px #ff0000)}
+.kchip{font-size:13px;font-weight:700;letter-spacing:.08em;background:var(--red);color:#fff;border-radius:4px;padding:1px 6px;vertical-align:middle}
+.kchip.out{background:#55555c}
+.knum{font-family:var(--display);font-weight:800;font-size:36px;min-width:56px;text-align:center;color:var(--gold)}
+.pad.np{grid-template-columns:repeat(5,1fr)}
+.pad.np .k{height:44px;font-size:28px}
+.pad.np .bullk{grid-column:span 5;background:linear-gradient(#11793d,#0a4f27);color:#fff;border-color:#0a4f27}
+
+/* halve-it */
+.ht{width:100%;border-collapse:collapse;font-family:var(--display);font-variant-numeric:tabular-nums;table-layout:fixed}
+.ht th{font-family:var(--body);font-size:13px;font-weight:600;color:var(--muted);padding:8px 4px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ht th.on{color:#fff;box-shadow:inset 0 -3px 0 var(--red)}
+.ht td{text-align:center;padding:4px;font-size:24px;font-weight:700;border-bottom:1px solid #222227}
+.ht td small{display:block;font-size:14px;color:var(--muted);font-weight:600;line-height:1}
+.ht td small i{font-style:normal}
+.ht td small.half{color:#ff3b4f;font-size:16px}
+.ht td.rt,.ht th.rt{width:84px;text-align:left;padding-left:10px;font-size:20px;color:var(--muted)}
+.ht tr.cur td{background:#241316}
+.ht tr.cur td.rt{color:var(--gold);box-shadow:inset 4px 0 0 var(--red)}
+.ht td.now{box-shadow:inset 0 0 0 2px var(--gold)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+.mods button{height:40px;border-radius:4px;background:var(--panel-2);border:1px solid var(--line);font-family:var(--display);font-weight:800;font-size:18px;letter-spacing:.08em;text-transform:uppercase}
+.mods button[data-hm="1"][aria-pressed="true"]{background:var(--chalk);color:#111}
+.mods button[data-hm="2"][aria-pressed="true"]{background:var(--green);border-color:var(--green);color:#fff}
+.mods button[data-hm="3"][aria-pressed="true"]{background:var(--red);border-color:var(--red);color:#fff}
+.pad.big3{grid-template-columns:repeat(3,1fr)}
+.pad.p3{grid-template-columns:repeat(3,1fr)}
+.pad.big2{grid-template-columns:repeat(2,1fr)}
+.pad.big3 .k,.pad.big2 .k{height:76px;font-size:36px;line-height:1}
+.pad.big2 .k{font-size:26px}
+.pad .k small{display:block;font-size:14px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;opacity:.8}
+
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:4px}
+.tabs button{padding:10px 4px;border-radius:7px;font-family:var(--display);font-weight:700;font-size:17px;letter-spacing:.04em;color:var(--muted)}
+.tabs button[aria-selected="true"]{background:var(--panel-2);color:#fff;box-shadow:inset 0 -3px 0 var(--red)}
+.seg.games{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr))}
+.seg.games button{font-size:18px;min-width:0}
+.rulesbtn{align-self:flex-start;padding:8px 2px;color:var(--gold);font-weight:600;text-decoration:underline;text-underline-offset:3px}
+.sheet.rules{max-height:85vh;overflow-y:auto}
+.sheet.rules ol{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:10px;line-height:1.45}
+.atc{display:flex;flex-direction:column;gap:10px;padding:12px 10px}
+.atc .pr{display:flex;flex-direction:column;gap:6px}
+.atc .pn{font-weight:600}
+.atc .pr.on .pn{color:#fff}
+.atc .chips{display:grid;grid-template-columns:repeat(11,1fr);gap:3px}
+.atc .c{height:28px;border-radius:4px;display:grid;place-items:center;font-family:var(--display);font-weight:700;font-size:15px;background:var(--panel-2);color:var(--muted)}
+.atc .c.done{background:var(--red);color:#fff}
+.atc .c.next{box-shadow:inset 0 0 0 2px var(--gold);color:#fff}
+.pad.p4{grid-template-columns:repeat(4,1fr)}
+.pad.p4 .k{height:76px;font-size:24px;line-height:1.05}
+.pad.p4 .k small{font-size:13px}
+
+.dock{position:relative}
+.dock.locked > :not(.lockmsg){opacity:.25;pointer-events:none}
+.lockmsg{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:26px;color:#fff;text-align:center;padding:12px}
+.codechip{font-family:var(--display);font-weight:800;font-size:16px;color:#fff;background:rgba(0,0,0,.3);border-radius:6px;padding:3px 8px;letter-spacing:.08em;vertical-align:middle}
+.codebig{font-family:var(--display);font-weight:800;font-size:64px;letter-spacing:.2em;text-align:center;color:var(--gold);line-height:1}
+.claims{display:flex;flex-direction:column;gap:6px}
+.claim{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-radius:8px;background:var(--panel-2);border:1px solid var(--line);font-weight:600;font-size:17px}
+.claim.on{background:var(--red);border-color:var(--red);color:#fff}
+.claim .cs{font-size:13px;opacity:.85;font-weight:500}
+
+/* bar + entry + keypad */
+.bar{display:grid;grid-template-columns:44px 1fr auto 44px;align-items:center;gap:8px;margin:0 6px;padding:6px 8px;border-radius:10px 10px 0 0;background:linear-gradient(#c8102e,#8e0b1f)}
+.bar .ib{width:36px;height:34px;border-radius:6px;display:grid;place-items:center;font-size:20px;font-weight:700;background:rgba(0,0,0,.25);color:#fff}
+.bar .bt{font-family:var(--display);font-weight:800;font-size:22px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar .bs{font-family:var(--display);font-weight:800;font-size:22px;color:#fff;font-variant-numeric:tabular-nums}
+.dock{margin:0 6px 6px;background:#2b2b30;padding:6px;display:flex;flex-direction:column;gap:6px;border-radius:0 0 10px 10px}
+.entry{display:grid;grid-template-columns:1fr 2.2fr 1fr;gap:6px}
+.back{height:58px;border-radius:6px;background:linear-gradient(#e2cf1e,#b3a011);color:#111;font-family:var(--display);font-weight:800;font-size:26px;border:1px solid #f2e45a}
+.miss{height:58px;border-radius:6px;background:linear-gradient(#8e0b1f,#5a0613);color:#fff;font-family:var(--display);font-weight:800;font-size:26px;border:1px solid #c8102e}
+.disp{height:58px;border-radius:6px;background:#000;border:1px solid #5a5a62;display:flex;align-items:center;justify-content:center;gap:8px;padding:0 8px;overflow:hidden;
+  font-family:var(--display);font-weight:700;font-size:30px;color:var(--gold);font-variant-numeric:tabular-nums;white-space:nowrap}
+.disp.typed{font-size:42px;color:#fff}
+.disp.co{font-size:26px}
+.disp .dart{font-size:24px;color:#fff;background:var(--panel-2);border-radius:5px;padding:0 6px}
+.disp .dart.void{color:var(--muted);text-decoration:line-through}
+.disp .dart.empty{color:#55555c;background:transparent;border:1px dashed #44444b;min-width:44px;text-align:center}
+.disp .dart{min-width:44px;text-align:center}
+.throwing{text-align:center;font-size:15px;color:var(--muted)}
+.throwing .tname{color:#fff;font-weight:700;font-size:17px}
+.throwing b{color:var(--gold)}
+.miss{line-height:1}
+.disp .muted{color:var(--muted);font-size:20px;font-weight:600}
+.pad{display:grid;grid-template-columns:.8fr 1fr 1fr 1fr .8fr;gap:4px}
+.pad button{height:50px;border-radius:4px;font-family:var(--display);font-weight:700;font-variant-numeric:tabular-nums}
+.pad .q{font-size:28px;color:#d6d6dc;background:transparent}
+.pad .k{font-size:34px;color:#111;background:linear-gradient(#f4f4f4,#bdbdc2);border:1px solid #8d8d93}
+.pad .k.g{background:linear-gradient(#11793d,#0a4f27);color:#fff;border-color:#0a4f27}
+.pad .k.r{background:linear-gradient(#a20d26,#5a0613);color:#fff;border-color:#5a0613}
+.pad .enter{grid-column:span 2;font-size:26px;letter-spacing:.06em;background:linear-gradient(#11793d,#0a4f27);color:#fff;border:1px solid #0a4f27}
+.pad button:active,.cnum:active,.cmod:active,.back:active,.miss:active{filter:brightness(1.25);transform:translateY(1px)}
+
+/* overlays */
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}
+.sheet{width:100%;max-width:420px;background:var(--panel);border:1px solid var(--red);border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:14px}
+.sheet h2{margin:0;font-family:var(--display);font-weight:800;font-size:32px;text-wrap:balance;line-height:1.1}
+.sheet .bigl{font-family:var(--display);font-weight:700;font-size:22px;color:var(--gold)}
+.stats{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:15px}
+.stats th,.stats td{padding:6px 4px;text-align:right;border-bottom:1px solid var(--line)}
+.stats th:first-child,.stats td:first-child{text-align:left}
+.stats th{color:var(--muted);font-weight:500;font-size:13px}
+.btns{display:flex;flex-direction:column;gap:8px}
+.dchoice{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.dchoice button{height:64px;border-radius:10px;background:var(--panel-2);border:1px solid var(--line);font-family:var(--display);font-weight:800;font-size:34px}
+.toast{position:fixed;left:50%;top:30%;transform:translateX(-50%);font-family:var(--display);font-weight:800;font-size:60px;color:var(--gold);
+  text-shadow:0 4px 24px #000;pointer-events:none;z-index:20;animation:pop 1.1s ease-out forwards;white-space:nowrap}
+.toast.bad{color:#ff3b4f}
+.toast.msg{font-size:22px;font-weight:700;color:#fff;background:var(--red-dark);border:1px solid var(--red);padding:10px 16px;border-radius:10px;white-space:normal;max-width:90vw;text-align:center;animation-duration:2.2s}
+@keyframes pop{0%{opacity:0;transform:translateX(-50%) scale(.7)}12%{opacity:1;transform:translateX(-50%) scale(1.04)}75%{opacity:1}100%{opacity:0;transform:translateX(-50%) scale(1)}}
+@media (prefers-reduced-motion:reduce){.toast{animation:none}}
+@media (max-width:380px){.big{font-size:56px}.nmbar{font-size:24px}.pad button{height:46px}.cnum{height:50px;font-size:40px}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+(() => {
+"use strict";
+const TARGETS = [20,19,18,17,16,15,25];
+const CATS = [
+  ["x01","X01",["601","501","301","101"]],
+  ["cricket","Cricket",["cricket","cutthroat"]],
+  ["party","Party",["killer","halveit","shanghai","baseball","golf"]],
+  ["practice","Practice",["atc","bobs","countup"]]
+];
+const catOf = g => (CATS.find(c=>c[2].includes(g)) || CATS[0])[0];
+const KEY = "dartsScorer.v2";
+const app = document.getElementById("app");
+
+let settings = { game:"501", inMode:"straight", outMode:"double", points:true, lives:3, shRounds:7, cuRounds:8, sets:1, legs:3, players:["Home","Away"] };
+let match = null, hist = [], screen = "setup", dialog = null, entry = "", pending = null, mod = 1;
+
+/* ---------- storage ---------- */
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({settings, match, hist:hist.slice(-200)})); }catch(e){} if(online && screen==="game") pushState(); }
+function load(){
+  try{
+    const d = JSON.parse(localStorage.getItem(KEY) || "null");
+    if(d){ if(d.settings) settings = Object.assign(settings, d.settings); if(d.match){ match = d.match; hist = d.hist || []; } }
+  }catch(e){}
+}
+
+/* ---------- online play (Firebase Realtime Database) ---------- */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyC8Sr2pECf2HQO8fUOI8vSeaainMrXQUSs",
+  authDomain: "darts-scorer-c9db4.firebaseapp.com",
+  databaseURL: "https://darts-scorer-c9db4-default-rtdb.firebaseio.com",
+  projectId: "darts-scorer-c9db4",
+  storageBucket: "darts-scorer-c9db4.firebasestorage.app",
+  messagingSenderId: "1060133831533",
+  appId: "1:1060133831533:web:69c6586d7ed8fcff5b5064"
+};
+const ONLINE_KEY = "dartsScorer.online", ONLINE_HIST = 20;
+let online = null;        // { code, rev }
+let fb = null;            // firebase.database()
+let gameRef = null;
+let remoteClaims = {};    // player index -> device id
+let joinState = null;     // { code, players, claims, pick:[] } while joining
+const deviceId = (() => {
+  try{ let d = localStorage.getItem("dartsScorer.device"); if(!d){ d = Math.random().toString(36).slice(2,10); localStorage.setItem("dartsScorer.device", d); } return d; }
+  catch(e){ return Math.random().toString(36).slice(2,10); }
+})();
+const onlineAvailable = () => !!FIREBASE_CONFIG;
+function loadScript(src){ return new Promise((res,rej)=>{ const s=document.createElement("script"); s.src=src; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); }
+async function fbInit(){
+  if(fb) return fb;
+  await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js");
+  await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js");
+  firebase.initializeApp(FIREBASE_CONFIG);
+  fb = firebase.database();
+  return fb;
+}
+function newCode(){ const A = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; let c = ""; for(let i=0;i<4;i++) c += A[Math.floor(Math.random()*A.length)]; return c; }
+function myClaims(){ return Object.keys(remoteClaims).filter(k=>remoteClaims[k]===deviceId).map(Number); }
+function isMyTurn(){ return !online || (match && myClaims().includes(match.cur)); }
+function saveOnline(){ try{ if(online) localStorage.setItem(ONLINE_KEY, JSON.stringify({ code:online.code })); else localStorage.removeItem(ONLINE_KEY); }catch(e){} }
+function savedOnline(){ try{ return JSON.parse(localStorage.getItem(ONLINE_KEY) || "null"); }catch(e){ return null; } }
+function pushState(){
+  if(!online || !fb || !match) return;
+  online.rev = (online.rev||0) + 1;
+  fb.ref(`games/${online.code}/state`).set({
+    match: JSON.stringify(match), hist: JSON.stringify(hist.slice(-ONLINE_HIST)),
+    rev: online.rev, by: deviceId, updated: firebase.database.ServerValue.TIMESTAMP
+  }).catch(()=>msg("Couldn't send that. Check your connection and try again."));
+}
+function stopListening(){ if(gameRef){ gameRef.child("state").off(); gameRef.child("claims").off(); gameRef = null; } }
+function listen(){
+  stopListening();
+  gameRef = fb.ref(`games/${online.code}`);
+  gameRef.child("state").on("value", snap=>{
+    const d = snap.val(); if(!d || !online) return;
+    if(d.by===deviceId && d.rev<=online.rev) return; // our own write coming back
+    online.rev = Math.max(online.rev||0, d.rev||0);
+    match = JSON.parse(d.match); hist = JSON.parse(d.hist || "[]"); entry = ""; pending = null;
+    try{ localStorage.setItem(KEY, JSON.stringify({settings, match, hist})); }catch(e){}
+    if(screen==="game") render();
+  });
+  gameRef.child("claims").on("value", snap=>{ remoteClaims = snap.val() || {}; if(screen==="game") render(); });
+}
+function goOffline(){ stopListening(); online = null; remoteClaims = {}; saveOnline(); }
+async function hostOnline(){
+  if(settings.game==="killer" && settings.players.length<2) return;
+  try{ await fbInit(); }catch(e){ msg("Couldn't reach the online service. Check your connection."); return; }
+  goOffline();
+  let code = newCode();
+  try{
+    for(let k=0;k<6;k++){ const s = await fb.ref(`games/${code}/state`).get(); if(!s.exists()) break; code = newCode(); }
+  }catch(e){ msg("Couldn't reach the online service. Check your connection."); return; }
+  online = { code, rev:0 };
+  startMatch();            // builds the match and pushes it
+  remoteClaims = { 0: deviceId };
+  await fb.ref(`games/${code}/claims/0`).set(deviceId);
+  listen(); saveOnline(); dialog = "share"; render();
+}
+async function lookupGame(raw){
+  const code = (raw||"").trim().toUpperCase();
+  if(code.length!==4){ msg("Game codes are 4 characters"); return; }
+  try{ await fbInit(); }catch(e){ msg("Couldn't reach the online service. Check your connection."); return; }
+  let d;
+  try{ const snap = await fb.ref(`games/${code}`).get(); d = snap.val(); }catch(e){ msg("Couldn't reach the online service. Check your connection."); return; }
+  if(!d || !d.state){ msg(`No game found with code ${code}`); return; }
+  const m = JSON.parse(d.state.match);
+  joinState = { code, players: m.players.map(p=>p.name), claims: d.claims || {}, pick: [], state: d.state };
+  dialog = "join"; render();
+}
+async function confirmJoin(){
+  const j = joinState; if(!j) return;
+  goOffline();
+  online = { code:j.code, rev:j.state.rev||0 };
+  match = JSON.parse(j.state.match); hist = JSON.parse(j.state.hist || "[]");
+  remoteClaims = Object.assign({}, j.claims);
+  for(const i of j.pick){ remoteClaims[i] = deviceId; await fb.ref(`games/${j.code}/claims/${i}`).set(deviceId); }
+  listen(); saveOnline(); joinState = null; dialog = null; screen = "game"; entry = ""; render();
+}
+async function rejoinOnline(){
+  const s = savedOnline(); if(!s) return;
+  try{ await fbInit(); }catch(e){ msg("Couldn't reach the online service. Check your connection."); return; }
+  try{
+    const snap = await fb.ref(`games/${s.code}`).get(), d = snap.val();
+    if(!d || !d.state){ msg("That online game has ended."); goOffline(); render(); return; }
+    online = { code:s.code, rev:d.state.rev||0 };
+    match = JSON.parse(d.state.match); hist = JSON.parse(d.state.hist || "[]"); remoteClaims = d.claims || {};
+  }catch(e){ msg("Couldn't reach the online service. Check your connection."); return; }
+  listen(); screen = "game"; render();
+}
+function toggleClaim(i){
+  if(!online) return;
+  const owner = remoteClaims[i];
+  if(owner && owner!==deviceId){ msg(`${match.players[i].name} is already playing on another device`); return; }
+  const ref = fb.ref(`games/${online.code}/claims/${i}`);
+  if(owner===deviceId){ delete remoteClaims[i]; ref.remove(); } else { remoteClaims[i] = deviceId; ref.set(deviceId); }
+  render();
+}
+function claimRows(names, claims, mine){
+  return names.map((n,i)=>{
+    const owner = claims[i], isMine = mine.includes(i), other = owner && owner!==deviceId && !isMine;
+    return `<button type="button" class="claim ${isMine?"on":""}" data-claim="${i}" ${other?"disabled":""}>
+      <span>${esc(n)}</span><span class="cs">${isMine ? "This phone" : other ? "Another phone" : "Open"}</span></button>`;
+  }).join("");
+}
+function onlineOverlay(){
+  if(dialog==="join" && joinState){
+    const j = joinState;
+    return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="jh">
+      <h2 id="jh">Join game ${esc(j.code)}</h2><div class="hint">Tap the player or players throwing on this phone. You can also join just to watch.</div>
+      <div class="claims">${claimRows(j.players, j.claims, j.pick)}</div>
+      <div class="btns"><button type="button" class="primary" data-act="confirmJoin">${j.pick.length ? "Join game" : "Watch game"}</button>
+      <button type="button" class="secondary" data-act="closeDlg">Cancel</button></div></div></div>`;
+  }
+  if(dialog==="share" && online && match){
+    const link = location.href.split("#")[0];
+    return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh">
+      <h2 id="sh">Online game</h2>
+      <div class="codebig">${esc(online.code)}</div>
+      <div class="hint">Friends open <b>${esc(link)}</b>, tap Join, and enter this code.</div>
+      <button type="button" class="secondary" data-act="copyInvite">Copy invite</button>
+      <div class="label">Players on this phone</div>
+      <div class="claims">${claimRows(match.players.map(p=>p.name), remoteClaims, myClaims())}</div>
+      <div class="btns"><button type="button" class="primary" data-act="closeDlg">Done</button></div></div></div>`;
+  }
+  return "";
+}
+
+/* ---------- helpers ---------- */
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const firstTo = n => Math.floor(n/2) + 1;
+const is01 = g => /^\d+$/.test(g);
+const NAMES = { cricket:"Cricket", cutthroat:"Cut-Throat", killer:"Killer", halveit:"Halve-It", shanghai:"Shanghai", baseball:"Baseball", golf:"Golf", atc:"Around the Clock", bobs:"Bob's 27", countup:"Count-Up" };
+const shortName = g => NAMES[g] || g;
+const RG = ["shanghai","baseball","golf","atc","bobs","countup"];
+const isRG = g => RG.includes(g);
+const isCricket = g => g==="cricket" || g==="cutthroat";
+const oneGame = g => g==="killer" || g==="halveit" || isRG(g);
+const ATC_T = [...Array(20).keys()].map(k=>k+1).concat([25]);
+const HALVE = [20,"EVEN",19,"ODD",18,"TRIPLE",17,"DOUBLE",16,"CHOICE",15,"BULL"];
+const halveLabel = t => typeof t==="number" ? String(t) : t.charAt(0)+t.slice(1).toLowerCase();
+function dartLabel(n,m){ if(n===0) return "Miss"; if(n===25) return m===2 ? "Bull" : "25"; return (m===3?"T":m===2?"D":"") + n; }
+function gameName(g, o){
+  if(g==="cricket") return o.points ? "Cricket" : "Cricket · No points";
+  if(g==="killer") return `Killer · ${o.lives} lives`;
+  if(g==="halveit") return "Halve-It";
+  if(g==="cutthroat") return "Cut-Throat Cricket";
+  if(g==="shanghai") return `Shanghai · ${o.shRounds} rounds`;
+  if(g==="countup") return `Count-Up · ${o.cuRounds} rounds`;
+  if(isRG(g)) return NAMES[g];
+  return `${g} · ${o.inMode==="double"?"Double in":"Straight in"}, ${o.outMode==="double"?"double out":"straight out"}`;
+}
+const POSSIBLE = (() => { const d=[0,25,50]; for(let i=1;i<=20;i++) d.push(i,2*i,3*i);
+  const s=new Set(); for(const a of d) for(const b of d) for(const c of d) s.add(a+b+c); return s; })();
+
+/* ---------- checkout suggestions ---------- */
+const ALL = (() => { const a=[]; for(let i=20;i>=1;i--) a.push({l:"T"+i,v:3*i}); a.push({l:"Bull",v:50}); a.push({l:"25",v:25});
+  for(let i=20;i>=1;i--) a.push({l:""+i,v:i}); for(let i=20;i>=1;i--) a.push({l:"D"+i,v:2*i}); return a; })();
+const DOUBLES = [20,16,18,12,10,8,14,6,4,2,19,17,15,13,11,9,7,5,3,1].map(i=>({l:"D"+i,v:2*i})).concat([{l:"Bull",v:50}]);
+function oneDart(r){ if(r<=0) return null; if(r<=20) return ""+r; if(r===25) return "25"; if(r===50) return "Bull";
+  if(r%3===0 && r<=60) return "T"+r/3; if(r%2===0 && r<=40) return "D"+r/2; return null; }
+function checkout(s, left, dbl){
+  if(s<=0 || s>180 || left<1) return null;
+  const fins = dbl ? DOUBLES : ALL;
+  if(!dbl){ const a = oneDart(s); if(a) return [a]; }
+  for(const f of fins) if(f.v===s) return [f.l];
+  if(left<2) return null;
+  for(const f of fins){ const a = oneDart(s-f.v); if(a) return [a,f.l]; }
+  if(left<3) return null;
+  for(const f of fins) for(const a of ALL){ const b = oneDart(s-f.v-a.v); if(b) return [a.l,b,f.l]; }
+  return null;
+}
+
+/* ---------- match engine ---------- */
+function newLeg(){
+  const g = match.game;
+  const p = match.players.map(() => is01(g)
+    ? { score:+g, isIn: match.opts.inMode==="straight", darts:0, turns:0 }
+    : g==="halveit"
+    ? { total:0, darts:0, turns:0, hist:[] }
+    : isRG(g)
+    ? { total: g==="bobs" ? 27 : 0, darts:0, turns:0, hist:[], out:false, pos:0 }
+    : g==="killer"
+    ? { num:null, lives:0, out:false, darts:0, turns:0, taken:0, last:null }
+    : { marks:{20:0,19:0,18:0,17:0,16:0,15:0,25:0}, points:0, darts:0, hits:0, turns:0, last:null });
+  return { p, log:[], phase: g==="killer" ? "pick" : "play", round:0 };
+}
+function startMatch(){
+  const names = settings.players.map((n,i)=>n.trim() || `Player ${i+1}`);
+  match = {
+    game: settings.game,
+    opts: { inMode:settings.inMode, outMode:settings.outMode, points: settings.game==="cutthroat" ? true : settings.points, lives:settings.lives, shRounds:settings.shRounds, cuRounds:settings.cuRounds,
+      cutthroat: settings.game==="cutthroat",
+      sets: oneGame(settings.game) ? 1 : settings.sets, legs: oneGame(settings.game) ? 1 : settings.legs },
+    players: names.map(name => ({ name, sets:0, legs:0, legsTotal:0, cDarts:0, cScore:0 })),
+    setNo:1, legNo:1, legStarter:0, cur:0, turn:[], turnMarks:0, over:null
+  };
+  match.leg = newLeg();
+  hist = []; entry = ""; pending = null; screen = "game"; save(); render();
+}
+function snapshot(){ hist.push(JSON.stringify(match)); if(hist.length>400) hist.shift(); match.by = deviceId; }
+function undo(){ if(!hist.length) return; match = JSON.parse(hist.pop()); entry = ""; pending = null; save(); render(); }
+function nextPlayer(){
+  const n = match.players.length;
+  for(let k=0;k<n;k++){
+    match.cur = (match.cur+1) % n;
+    if((match.game!=="killer" && match.game!=="bobs") || !match.leg.p[match.cur].out) return;
+  }
+}
+
+/* killer: throw for numbers, then dart-by-dart */
+function pickNumber(n){
+  const L = match.leg;
+  if(L.p.some(q=>q.num===n)){ msg(`${n===25?"Bull":n} is taken. Throw again.`); return; }
+  snapshot();
+  L.p[match.cur].num = n;
+  advancePick(); save(); render();
+}
+function advancePick(){
+  const L = match.leg, n = match.players.length;
+  for(let k=0;k<n;k++){ const i = (match.legStarter+k) % n; if(L.p[i].num===null){ match.cur = i; return; } }
+  L.phase = "play"; match.cur = match.legStarter;
+}
+function randomPick(){
+  const used = match.leg.p.map(q=>q.num);
+  const free = [...Array(20).keys()].map(k=>k+1).concat([25]).filter(n=>!used.includes(n));
+  pickNumber(free[Math.floor(Math.random()*free.length)]);
+}
+function reuseNumbers(){
+  snapshot();
+  match.leg.p.forEach((q,i)=>q.num = match.lastNums[i]);
+  advancePick(); save(); render();
+}
+function killerDart(n, m){
+  if(!match || match.over || match.leg.phase!=="play") return;
+  snapshot();
+  const L = match.leg, idx = match.cur, p = L.p[idx], max = match.opts.lives;
+  p.darts++;
+  let counted = false;
+  const o = n ? L.p.findIndex(q=>q.num===n && !q.out) : -1;
+  if(o>=0 && o!==idx && (p.lives!==max || L.p[o].turns===0)){ { const prev = hist.pop(); match.by = JSON.parse(prev).by; } p.darts--; return; }
+  if(o===idx){
+    counted = true;
+    if(p.lives===max){
+      p.lives = -1; p.out = true; toast(`${match.players[idx].name} killed themselves!`, true);
+    } else if(p.lives + m > max){
+      p.lives = -1; p.out = true; toast(`${match.players[idx].name} went over ${max}. Out!`, true);
+    } else {
+      p.lives += m;
+      if(p.lives===max) toast("KILLER!");
+    }
+  } else if(o>=0 && p.lives===max){
+    counted = true;
+    const q = L.p[o]; q.lives -= m; p.taken += m;
+    if(q.lives<0){ q.out = true; toast(`${match.players[o].name} is out!`, true); }
+  }
+  match.turn.push({ n, m, counted });
+  const alive = L.p.map((q,i)=>i).filter(i=>!L.p[i].out);
+  if(alive.length===1){
+    const w = alive[0];
+    p.turns++; p.last = match.turn.map(d=>dartLabel(d.n,d.m));
+    endLeg(w, { darts:L.p[w].darts });
+  } else if(p.out || match.turn.length>=3){
+    p.turns++; p.last = match.turn.map(d=>dartLabel(d.n,d.m));
+    match.turn = []; nextPlayer();
+  }
+  save(); render();
+}
+
+/* 01: whole-turn score entry */
+function submitScore(v){
+  if(!match || match.over) return;
+  if(match.game==="halveit") return halveTotal(v);
+  if(match.game==="countup") return countupTotal(v);
+  entry = "";
+  const L = match.leg, i = match.cur, p = L.p[i], rem = p.score, dbl = match.opts.outMode==="double";
+  if(!POSSIBLE.has(v)){ msg(`${v} can't be scored with 3 darts`); render(); return; }
+  if(!p.isIn && v===1){ msg("Double in: the lowest starting score is 2"); render(); return; }
+  if(v===rem){
+    if(dbl && !checkout(rem,3,true)){ msg(`${rem} can't be finished on a double in 3 darts`); render(); return; }
+    let min = 1; while(min<3 && !checkout(rem,min,dbl)) min++;
+    if(min===3){ finish(3); return; }
+    pending = { score:rem, opts:[1,2,3].filter(d=>d>=min) }; render(); return;
+  }
+  snapshot();
+  p.darts += 3; p.turns++;
+  if(v>rem || (dbl && rem-v===1)){
+    L.log.push({ i, v:0, left:rem, bust:true }); toast("Bust", true);
+  } else {
+    p.score -= v; if(v>0) p.isIn = true;
+    L.log.push({ i, v, left:p.score });
+    if(v===180) toast("180!"); else if(v>=140) toast(v+"!");
+  }
+  nextPlayer(); save(); render();
+}
+function finish(darts){
+  const L = match.leg, i = match.cur, p = L.p[i];
+  snapshot();
+  const co = p.score;
+  p.darts += darts; p.turns++; L.log.push({ i, v:co, left:0 }); p.score = 0; p.isIn = true;
+  pending = null;
+  endLeg(i, { checkout:co, darts:p.darts });
+  save(); render();
+}
+
+/* cricket: dart-by-dart */
+function throwDart(n, m){
+  if(!match || match.over) return;
+  snapshot();
+  const L = match.leg, idx = match.cur, p = L.p[idx];
+  p.darts++;
+  let counted = false, win = false;
+  if(TARGETS.includes(n)){
+    const cur = p.marks[n], need = 3-cur, extra = Math.max(0, m-need);
+    p.marks[n] = Math.min(3, cur+m);
+    let scored = 0;
+    const open = L.p.filter((o,i)=>i!==idx && o.marks[n]<3);
+    if(extra && match.opts.points && open.length){
+      scored = extra;
+      if(match.opts.cutthroat) open.forEach(o=>o.points += extra*n); else p.points += extra*n;
+    }
+    const add = Math.min(m,need) + scored;
+    p.hits += add; match.turnMarks += add; counted = add > 0;
+    const closed = TARGETS.every(t=>p.marks[t]===3);
+    if(closed && (!match.opts.points || L.p.every((o,i)=>i===idx || (match.opts.cutthroat ? p.points<=o.points : p.points>=o.points)))) win = true;
+  }
+  match.turn.push({n, m, counted});
+  if(win){ p.turns++; p.last = cricketSummary(); endLeg(idx, { darts:p.darts }); }
+  else if(match.turn.length>=3) endCricketTurn();
+  save(); render();
+}
+/* halve-it */
+function halveTarget(){ return HALVE[match.leg.round]; }
+function dartValue(n,m){ return n===25 ? 25*m : n*m; }
+function dartCounts(d, t, choice){
+  if(d.n===0) return false;
+  if(typeof t==="number") return d.n===t;
+  if(t==="TRIPLE") return d.m===3;
+  if(t==="DOUBLE") return d.m===2;
+  if(t==="BULL") return d.n===25;
+  if(t==="CHOICE") return d.n===choice;
+  return true; // EVEN / ODD: every dart adds to the total
+}
+function halveScore(darts, t, choice){
+  const total = darts.filter(d=>dartCounts(d,t,choice)).reduce((a,d)=>a+dartValue(d.n,d.m),0);
+  if(t==="EVEN") return total>0 && total%2===0 ? total : 0;
+  if(t==="ODD") return total%2===1 ? total : 0;
+  return total;
+}
+function pickChoice(n){
+  snapshot(); match.choice = n; save(); render();
+}
+function halveDart(n, m){
+  if(!match || match.over) return;
+  const t = halveTarget();
+  if(t==="CHOICE" && !match.choice) return;
+  snapshot();
+  const p = match.leg.p[match.cur];
+  p.darts++;
+  const d = { n, m };
+  d.counted = t==="EVEN" || t==="ODD" ? n>0 : dartCounts(d, t, match.choice);
+  match.turn.push(d);
+  if(match.turn.length>=3) endHalveTurn();
+  mod = 1; save(); render();
+}
+function halveTotal(v){
+  entry = "";
+  if(!["EVEN","ODD"].includes(halveTarget())) return;
+  if(!POSSIBLE.has(v)){ msg(`${v} can't be scored with 3 darts`); render(); return; }
+  snapshot();
+  match.leg.p[match.cur].darts += 3; match.turn = [];
+  const t = halveTarget();
+  const sc = t==="EVEN" ? (v>0 && v%2===0 ? v : 0) : (v%2===1 ? v : 0);
+  endHalveTurn(sc); save(); render();
+}
+function endHalveTurn(override){
+  const L = match.leg, i = match.cur, p = L.p[i], t = halveTarget();
+  const sc = override!==undefined ? override : halveScore(match.turn, t, match.choice);
+  const before = p.total;
+  if(sc>0) p.total += sc; else { p.total = Math.ceil(p.total/2); toast("Halved!", true); }
+  p.hist.push({ score:sc, halved:sc===0, total:p.total, before, choice: t==="CHOICE" ? match.choice : null });
+  p.turns++; match.turn = []; match.choice = null;
+  nextPlayer();
+  if(match.cur===match.legStarter){
+    L.round++;
+    if(L.round>=HALVE.length){ finishHalve(); return; }
+  }
+}
+function finishHalve(){
+  const L = match.leg, best = Math.max(...L.p.map(q=>q.total));
+  const winners = L.p.map((q,i)=>i).filter(i=>L.p[i].total===best);
+  winners.forEach(w=>match.players[w].legsTotal++);
+  match.over = { type:"match", winner:winners[0], tie: winners.length>1 ? winners : null, legScore: match.players.map(p=>p.legs), darts: L.p[winners[0]].darts };
+  match.turn = [];
+}
+function halveLast(i){
+  const h = match.leg.p[i].hist, last = h[h.length-1];
+  if(!last) return "";
+  return last.halved ? `<span class="avg">½</span>` : `<span>+${last.score}</span>`;
+}
+/* ---------- round games: shanghai, baseball, golf, around the clock, bob's 27, count-up ---------- */
+function rgRounds(){
+  const g = match.game, o = match.opts, seq = n => [...Array(n).keys()].map(k=>k+1);
+  if(g==="shanghai") return seq(o.shRounds);
+  if(g==="baseball" || g==="golf") return seq(9);
+  if(g==="bobs") return seq(20).concat([25]);
+  if(g==="countup") return seq(o.cuRounds);
+  return null;
+}
+function rgTarget(){ const r = rgRounds(); return r ? r[Math.min(match.leg.round, r.length-1)] : ATC_T[Math.min(match.leg.p[match.cur].pos, ATC_T.length-1)]; }
+function rgRowLabel(t){
+  const g = match.game;
+  if(g==="bobs") return t===25 ? "D-Bull" : "D"+t;
+  if(g==="countup") return "R"+t;
+  if(g==="golf") return "Hole "+t;
+  if(g==="baseball") return "Inn "+t;
+  return String(t);
+}
+const GOLF = { 2:{v:1,l:"Double",s:"Dbl"}, 3:{v:2,l:"Triple",s:"Trp"}, 1:{v:3,l:"Single",s:"Sgl"}, 0:{v:5,l:"Miss",s:"Miss"} };
+function rgDart(n, m){
+  if(!match || match.over) return;
+  const g = match.game, L = match.leg, idx = match.cur, p = L.p[idx];
+  snapshot();
+  p.darts++;
+  const t = rgTarget();
+  if(g==="atc"){
+    const hit = n>0;
+    match.turn.push({ n:hit?t:0, m:1, counted:hit });
+    if(hit){ p.pos++; if(p.pos>=ATC_T.length){ p.turns++; match.turn=[]; finishRG([idx]); save(); render(); return; } }
+  } else if(g==="golf"){
+    match.turn.push({ n:m?t:0, m:m||1, counted:m>0, golf:GOLF[m] });
+  } else {
+    match.turn.push({ n, m:m||1, counted:n===t && n>0 });
+  }
+  if(match.turn.length>=3) rgEndTurn();
+  save(); render();
+}
+function rgEndTurn(override){
+  const g = match.game, L = match.leg, idx = match.cur, p = L.p[idx], t = rgTarget();
+  let sc = 0, tag = "";
+  if(g==="shanghai"){
+    const hits = match.turn.filter(d=>d.n===t);
+    sc = hits.reduce((a,d)=>a+t*d.m,0); tag = "+"+sc;
+    const ms = new Set(hits.map(d=>d.m));
+    if(ms.has(1) && ms.has(2) && ms.has(3)){
+      p.total += sc; p.hist.push({score:sc,total:p.total,tag:"SHANGHAI"}); p.turns++; match.turn=[];
+      toast("SHANGHAI!"); finishRG([idx], true); return;
+    }
+  } else if(g==="baseball"){ sc = match.turn.filter(d=>d.n===t).reduce((a,d)=>a+d.m,0); tag = sc ? `+${sc}` : "0"; }
+  else if(g==="golf"){ const last = match.turn[match.turn.length-1]; sc = last.golf.v; tag = last.golf.l; }
+  else if(g==="bobs"){
+    const val = t===25 ? 50 : 2*t;
+    sc = override>0 ? override*val : -val; tag = (sc>0?"+":"")+sc;
+  }
+  else if(g==="countup"){ sc = override; tag = "+"+sc; }
+  if(g!=="atc"){
+    p.total += sc;
+    p.hist.push({ score:sc, total:p.total, tag });
+    if(g==="bobs" && p.total<0){ p.out = true; toast(`${match.players[idx].name} is out!`, true); }
+  }
+  p.turns++; match.turn = [];
+  const alive = L.p.filter(q=>!q.out);
+  if(!alive.length){ finishRG(); return; }
+  nextPlayer();
+  const r = rgRounds();
+  if(r && alive.every(q=>q.turns>L.round)){
+    L.round++;
+    if(L.round>=r.length){ finishRG(); return; }
+  }
+}
+function rgRest(){
+  if(!match || match.over) return;
+  if(match.game==="golf"){ if(match.turn.length){ snapshot(); rgEndTurn(); save(); render(); } return; }
+  const left = 3 - match.turn.length;
+  for(let k=0;k<left;k++) rgDart(0,0);
+}
+function bobsHits(h){
+  if(!match || match.over) return;
+  snapshot(); match.leg.p[match.cur].darts += 3; match.turn = [];
+  rgEndTurn(h); save(); render();
+}
+function countupTotal(v){
+  entry = "";
+  if(!POSSIBLE.has(v)){ msg(`${v} can't be scored with 3 darts`); render(); return; }
+  snapshot(); match.leg.p[match.cur].darts += 3; match.turn = [];
+  if(v===180) toast("180!");
+  rgEndTurn(v); save(); render();
+}
+function finishRG(winners, instant){
+  const g = match.game, L = match.leg, P = L.p;
+  if(!winners){
+    const idx = P.map((q,i)=>i);
+    if(g==="golf"){ const b = Math.min(...P.map(q=>q.total)); winners = idx.filter(i=>P[i].total===b); }
+    else if(g==="bobs"){
+      const alive = idx.filter(i=>!P[i].out);
+      if(alive.length){ const b = Math.max(...alive.map(i=>P[i].total)); winners = alive.filter(i=>P[i].total===b); }
+      else { const b = Math.max(...P.map(q=>q.turns)); winners = idx.filter(i=>P[i].turns===b); }
+    }
+    else { const b = Math.max(...P.map(q=>q.total)); winners = idx.filter(i=>P[i].total===b); }
+  }
+  winners.forEach(w=>match.players[w].legsTotal++);
+  match.over = { type:"match", winner:winners[0], tie: winners.length>1 ? winners : null, legScore: match.players.map(p=>p.legs), darts:P[winners[0]].darts, instant:!!instant };
+  match.turn = [];
+}
+function rgLast(i){
+  const P = match.leg.p[i];
+  if(match.game==="atc") return `<span>${P.darts}d</span>`;
+  if(P.out) return `<span class="avg">OUT</span>`;
+  const h = P.hist[P.hist.length-1];
+  return h ? `<span class="${h.score<0?"avg":""}">${esc(h.tag)}</span>` : "";
+}
+function cricketSummary(){ return { darts: match.turn.map(d=>dartLabel(d.n,d.m)), marks: match.turnMarks }; }
+function endCricketTurn(){
+  const p = match.leg.p[match.cur];
+  p.turns++; p.last = cricketSummary();
+  if(match.turnMarks>=5) toast(match.turnMarks+" marks!");
+  match.turn = []; match.turnMarks = 0; nextPlayer();
+}
+function cricketRest(){
+  if(!match || match.over) return;
+  const left = 3 - match.turn.length, fn = match.game==="killer" ? killerDart : match.game==="halveit" ? halveDart : throwDart;
+  for(let k=0;k<left;k++) fn(0,1);
+}
+
+/* legs, sets, match */
+function endLeg(w, info){
+  const L = match.leg;
+  match.players.forEach((pl,i)=>{
+    pl.cDarts += L.p[i].darts;
+    pl.cScore += is01(match.game) ? (+match.game - L.p[i].score) : match.game==="killer" ? L.p[i].taken : L.p[i].hits;
+  });
+  if(match.game==="killer") match.lastNums = L.p.map(q=>q.num);
+  const pl = match.players[w];
+  pl.legs++; pl.legsTotal++;
+  const result = Object.assign({ type:"leg", winner:w, legScore: match.players.map(p=>p.legs) }, info);
+  if(pl.legs >= firstTo(match.opts.legs)){
+    pl.sets++; result.type = "set"; result.setScore = match.players.map(p=>p.sets);
+    match.players.forEach(p=>p.legs=0);
+    if(pl.sets >= firstTo(match.opts.sets)) result.type = "match";
+  }
+  match.over = result; match.turn = []; match.turnMarks = 0;
+}
+function nextLeg(){
+  if(!match.over || match.over.type==="match") return;
+  snapshot();
+  if(match.over.type==="set"){ match.setNo++; match.legNo = 1; } else match.legNo++;
+  match.legStarter = (match.legStarter+1) % match.players.length;
+  match.cur = match.legStarter; match.leg = newLeg(); match.over = null;
+  save(); render();
+}
+
+/* ---------- stats ---------- */
+function avgFor(i){
+  const pl = match.players[i], P = match.leg.p[i], live = !match.over;
+  const darts = pl.cDarts + (live ? P.darts : 0);
+  if(match.game==="killer") return pl.cScore + (live ? P.taken : 0);
+  if(match.game==="halveit") return P.total;
+  if(match.game==="atc") return P.pos>=ATC_T.length ? `${P.darts} darts` : `${P.pos}/21`;
+  if(match.game==="bobs" && P.out) return "Out";
+  if(isRG(match.game)) return P.total;
+  const score = pl.cScore + (live ? (is01(match.game) ? (+match.game - P.score) : P.hits) : 0);
+  return darts ? score/darts*3 : 0;
+}
+const avgText = i => oneGame(match.game) ? String(avgFor(i)) : avgFor(i).toFixed(is01(match.game) ? 1 : 2);
+
+/* ---------- toasts ---------- */
+function toast(text, bad){ const t=document.createElement("div"); t.className="toast"+(bad?" bad":""); t.textContent=text; document.body.appendChild(t); setTimeout(()=>t.remove(),1200); }
+function msg(text){ const t=document.createElement("div"); t.className="toast msg"; t.textContent=text; document.body.appendChild(t); setTimeout(()=>t.remove(),2300); }
+
+/* ---------- rules ---------- */
+function rulesFor(g, o){
+  const lives = o.lives || 3;
+  if(is01(g)) return [
+    `Everyone starts on ${g}. Each turn you throw 3 darts and their total comes off your score.`,
+    o.inMode==="double" ? "Double in: your score doesn't start dropping until you hit a double. That double and everything after it counts." : "Straight in: every dart counts from the first throw.",
+    o.outMode==="double" ? "Double out: you must finish on exactly 0, and the last dart must be a double (the bull counts as a double)." : "Straight out: finish on exactly 0 with any dart.",
+    o.outMode==="double" ? "Bust: go below 0, land on exactly 1, or reach 0 without a double, and the turn scores nothing." : "Bust: go below 0 and the turn scores nothing.",
+    "First to 0 wins the leg. Win the most legs to take the set, and the most sets to take the match."
+  ];
+  if(g==="cricket") return [
+    "The numbers in play are 15 through 20 and the bull. Hit a number 3 times to close it: a single is 1 mark, a double 2, a triple 3. Outer bull is 1 mark, inner bull 2.",
+    o.points ? "Once you've closed a number, extra hits score its value as points for you, as long as at least one opponent hasn't closed it yet." : "No points: extra hits on a closed number don't score.",
+    o.points ? "Close all 7 targets with at least as many points as everyone else to win." : "First to close all 7 targets wins."
+  ];
+  if(g==="cutthroat") return [
+    "Marks work like Cricket: close 15 through 20 and the bull by hitting each 3 times.",
+    "Once you've closed a number, extra hits add points to every opponent who hasn't closed it. Points are bad in this game.",
+    "Close all 7 targets with points equal to or lower than everyone else to win. Lowest score wins."
+  ];
+  if(g==="killer") return [
+    "Each player throws for a number at the start of the game (1–20 or the bull). No two players can share one.",
+    `Every hit on your own number builds lives: a single is 1, a double 2, a triple 3. Single and double bull both count for the bull.`,
+    `Land on exactly ${lives} lives to become a killer. Going over ${lives} knocks you out, killer or not.`,
+    "Killers attack by hitting other players' numbers, taking 1, 2 or 3 lives. A killer can't attack a player who hasn't had their first turn yet.",
+    `A killer who hits their own number is out. Drop below ${lives} and you lose killer status until you build back up.`,
+    "You're out once you're taken below 0 lives (a player on 2 lives needs 3 hits to be out). Last player standing wins."
+  ];
+  if(g==="halveit") return [
+    "12 rounds, in order: 20, Even, 19, Odd, 18, Triple, 17, Double, 16, Choice, 15, Bull. Everyone starts on 0.",
+    "Number rounds: score what you hit on that number (single, double or triple).",
+    "Even and Odd: your whole 3-dart total counts if it's even (or odd).",
+    "Triple and Double: any triple (or any double) scores its value.",
+    "Choice: call a number before you throw. Only that number counts.",
+    "Score nothing in a round and your total is cut in half, rounded up. Highest total after the Bull round wins."
+  ];
+  if(g==="shanghai") return [
+    `${o.shRounds} rounds. Round 1 aims at 1, round 2 at 2, and so on up to ${o.shRounds}.`,
+    "Only the round's number scores: a single is face value, a double twice that, a triple three times.",
+    "Hit a single, a double and a triple of the number in one turn (a Shanghai) and you win on the spot.",
+    "Otherwise the highest total after the last round wins."
+  ];
+  if(g==="baseball") return [
+    "9 innings. Inning 1 aims at 1, inning 2 at 2, and so on up to 9.",
+    "Each hit on the inning's number scores runs: a single is 1, a double 2, a triple 3.",
+    "Most runs after 9 innings wins. Equal runs end as a tie."
+  ];
+  if(g==="golf") return [
+    "9 holes. Hole 1 aims at 1, hole 2 at 2, and so on up to 9.",
+    "Throw up to 3 darts per hole. Your last dart is your score: double 1, triple 2, single 3, miss 5.",
+    "You can stop after any dart to keep that score, so a double on your first dart is worth keeping.",
+    "Lowest total after 9 holes wins."
+  ];
+  if(g==="atc") return [
+    "Hit 1 through 20 in order, then the bull.",
+    "A single, double or triple of your target all count, and move you on to the next number.",
+    "First to hit the bull wins. On your own, try to finish in as few darts as you can."
+  ];
+  if(g==="bobs") return [
+    "A doubles drill. Everyone starts on 27.",
+    "21 rounds: D1, D2 and so on up to D20, then the double bull. Throw 3 darts at the round's double.",
+    "Each hit adds the double's value (a hit on D5 adds 10, double bull adds 50).",
+    "Miss with all 3 darts and you lose the double's value instead.",
+    "Drop below 0 and you're out. Highest score at the end wins."
+  ];
+  if(g==="countup") return [
+    `${o.cuRounds} rounds of 3 darts. Add up everything you score.`,
+    "Highest total wins. A good way to practise scoring on the treble 20."
+  ];
+  return [];
+}
+function rulesOverlay(g, o){
+  return `<div class="ov"><div class="sheet rules" role="dialog" aria-modal="true" aria-labelledby="rh">
+    <h2 id="rh">How to play ${esc(gameName(g,o))}</h2>
+    <ol>${rulesFor(g,o).map(r=>`<li>${esc(r)}</li>`).join("")}</ol>
+    <button type="button" class="primary" data-act="closeRules">Got it</button></div></div>`;
+}
+
+/* ---------- render: setup ---------- */
+function segBtns(name, opts, val){
+  return opts.map(([v,l])=>`<button type="button" data-set="${name}" data-val="${v}" aria-pressed="${String(val)===String(v)}">${l}</button>`).join("");
+}
+function stepper(name, val, unit){
+  return `<div class="row"><div><div style="font-weight:600">${name==="sets"?"Sets":"Legs per set"}</div>
+    <div class="hint">Best of ${val} · first to ${firstTo(val)} ${unit}${firstTo(val)>1?"s":""}</div></div>
+    <div class="stepper"><button type="button" data-step="${name}" data-d="-1" aria-label="Fewer ${name}">−</button>
+    <output>${val}</output><button type="button" data-step="${name}" data-d="1" aria-label="More ${name}">+</button></div></div>`;
+}
+function renderSetup(){
+  const s = settings, resumable = match && !(match.over && match.over.type==="match");
+  app.innerHTML = `<div class="wrap">
+    <h1><span class="ring" aria-hidden="true"></span>Darts Scorer</h1>
+    ${resumable ? `<div class="card resume"><strong>Match in progress</strong>
+      <div class="hint">${esc(match.players.map(p=>p.name).join(" vs "))} · ${esc(gameName(match.game, match.opts))}</div>
+      <button type="button" class="secondary" data-act="resume">Resume match</button></div>` : ""}
+    ${onlineAvailable() && savedOnline() ? `<div class="card resume"><strong>Online game ${esc(savedOnline().code)}</strong>
+      <div class="hint">Pick up where you left off.</div>
+      <div class="row"><button type="button" class="secondary" style="flex:1" data-act="rejoin">Rejoin</button><button type="button" class="ghost" data-act="forget">Forget it</button></div></div>` : ""}
+    ${onlineAvailable() ? `<div class="card"><div class="label">Join a friend's game</div>
+      <div class="prow"><input id="joincode" maxlength="4" placeholder="Game code" autocomplete="off" autocapitalize="characters" aria-label="Game code" style="text-transform:uppercase;letter-spacing:.2em;font-weight:700">
+      <button type="button" class="secondary" data-act="join">Join</button></div></div>` : ""}
+    <div class="card"><div class="label">Game</div>
+      <div class="tabs" role="tablist">${CATS.map(([k,l])=>`<button type="button" role="tab" data-cat="${k}" aria-selected="${catOf(s.game)===k}">${l}</button>`).join("")}</div>
+      <div class="seg games">${segBtns("game", CATS.find(c=>c[0]===catOf(s.game))[2].map(g=>[g, shortName(g)]), s.game)}</div>
+      ${s.game==="killer" ? `<div class="label">Lives</div><div class="seg small">${segBtns("lives", [["3","3 lives"],["5","5 lives"]], s.lives)}</div>`
+      : s.game==="shanghai" ? `<div class="label">Rounds</div><div class="seg small">${segBtns("shRounds", [["7","1 to 7"],["20","1 to 20"]], s.shRounds)}</div>`
+      : s.game==="countup" ? `<div class="label">Rounds</div><div class="seg small">${segBtns("cuRounds", [["8","8 rounds"],["10","10 rounds"]], s.cuRounds)}</div>`
+      : is01(s.game) ? `
+        <div class="label">Start</div><div class="seg small">${segBtns("inMode", [["straight","Straight in"],["double","Double in"]], s.inMode)}</div>
+        <div class="label">Finish</div><div class="seg small">${segBtns("outMode", [["double","Double out"],["straight","Straight out"]], s.outMode)}</div>`
+      : s.game==="cricket" ? `<div class="label">Scoring</div><div class="seg small">${segBtns("points", [["true","With points"],["false","No points"]], s.points)}</div>` : ""}
+      <button type="button" class="rulesbtn" data-act="rules">How to play ${esc(shortName(s.game))}</button>
+    </div>
+    ${oneGame(s.game) ? "" : `<div class="card"><div class="label">Format</div>${stepper("sets", s.sets, "set")}${stepper("legs", s.legs, "leg")}</div>`}
+    <div class="card"><div class="label">Players</div>
+      <div class="players">${s.players.map((n,i)=>`<div class="prow">
+        <input id="pl-${i}" data-pl="${i}" value="${esc(n)}" maxlength="20" aria-label="Player ${i+1} name" autocomplete="off">
+        ${s.players.length>1 ? `<button type="button" class="x" data-rm="${i}" aria-label="Remove ${esc(n)}">×</button>` : ""}</div>`).join("")}</div>
+      ${s.players.length<8 ? `<button type="button" class="ghost" data-act="addp">+ Add player</button>` : ""}
+      <div class="hint">Throw order follows this list.${oneGame(s.game) ? "" : " The first thrower rotates each leg."}</div>
+    </div>
+    ${s.game==="killer" && s.players.length<2 ? `<div class="hint">Killer needs at least 2 players.</div>` : ""}
+    <button type="button" class="primary" data-act="start" ${s.game==="killer" && s.players.length<2 ? "disabled" : ""}>${resumable ? "Start new match" : "Start match"}</button>
+    ${onlineAvailable() ? `<button type="button" class="secondary" data-act="host" ${s.game==="killer" && s.players.length<2 ? "disabled" : ""}>Host online match</button>
+    <div class="hint" style="text-align:center">Hosting gives you a code. Friends join from their own phones and enter their own darts.</div>` : ""}
+  </div>${dialog==="rules" ? rulesOverlay(s.game, s) : dialog==="join" ? onlineOverlay() : ""}`;
+}
+
+/* ---------- render: game ---------- */
+const MARK = [
+  "",
+  `<svg viewBox="0 0 30 30" aria-label="1 mark"><path d="M8 23 L22 7" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/></svg>`,
+  `<svg viewBox="0 0 30 30" aria-label="2 marks"><path d="M8 23 L22 7 M8 7 L22 23" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/></svg>`,
+  `<svg viewBox="0 0 30 30" aria-label="closed"><circle cx="15" cy="15" r="12.5" fill="none" stroke="#2ecc71" stroke-width="3"/><path d="M9.5 20.5 L20.5 9.5 M9.5 9.5 L20.5 20.5" stroke="#2ecc71" stroke-width="3.4" stroke-linecap="round"/></svg>`
+];
+function modeText(){
+  const o = match.opts;
+  if(match.game==="killer") return `${o.lives} LIVES`;
+  if(match.game==="cutthroat") return "CUT-THROAT";
+  if(isRG(match.game)){
+    if(match.game==="countup") return "ANY";
+    const t = rgTarget();
+    if(match.game==="bobs") return t===25 ? "D-BULL" : "D"+t;
+    if(match.game==="atc") return t===25 ? "BULL" : String(t);
+    return match.game==="golf" ? "HOLE" : match.game==="baseball" ? "INNING" : "TARGET";
+  }
+  if(match.game==="halveit"){ const t = HALVE[Math.min(match.leg.round,11)]; return t==="CHOICE" && match.choice ? `CHOICE: ${match.choice===25?"BULL":match.choice}` : String(t); }
+  if(!is01(match.game)) return o.points ? "PTS" : "NO PTS";
+  return (o.inMode==="double"?"DI":"SI") + (o.outMode==="double"?" · DO":" · SO");
+}
+function roundNo(){ if(isRG(match.game)){ const r = rgRounds(); return r ? Math.min(match.leg.round, r.length-1)+1 : match.leg.p[match.cur].turns+1; }
+  return match.game==="halveit" ? Math.min(match.leg.round,11)+1 : match.leg.p[match.cur].turns + 1; }
+function L_round(){ return match.leg.phase==="pick" ? "Throw for numbers" : `Round ${roundNo()}`; }
+function bigValue(i){
+  const P = match.leg.p[i];
+  if(is01(match.game)) return P.score;
+  if(match.game==="halveit") return P.total;
+  if(match.game==="atc") return P.pos>=ATC_T.length ? "✓" : ATC_T[P.pos]===25 ? "B" : ATC_T[P.pos];
+  if(isRG(match.game)) return P.out ? "–" : P.total;
+  if(match.opts.points) return P.points;
+  return TARGETS.filter(t=>P.marks[t]===3).length + "/7";
+}
+function sideCard(i, cls){
+  const pl = match.players[i], active = i===match.cur && !match.over;
+  const setsLine = match.opts.sets>1 ? `<span>S${pl.sets}</span>` : "";
+  return `<div class="side ${cls} ${active?"active":""}">
+    <div class="nmbar">${esc(pl.name)}</div>
+    <div class="scorebox"><div class="stk">${match.game==="halveit" ? halveLast(i) : isRG(match.game) ? rgLast(i) : `<span class="avg">${avgText(i)}</span><span>${pl.legs}</span>${setsLine}`}</div>
+    <div class="big">${bigValue(i)}</div></div></div>`;
+}
+function renderHeader(){
+  const n = match.players.length;
+  if(n===2) return `<div class="hdr">${sideCard(0,"L")}<div class="mid"><div class="rnd">${roundNo()}</div><div class="mode">${modeText()}</div></div>${sideCard(1,"R")}</div>`;
+  return `<div class="roundline"><span>Round ${roundNo()}</span><span class="mode">${modeText()}</span></div>
+    <div class="hdr many">${match.players.map((_,i)=>sideCard(i,"L")).join("")}</div>`;
+}
+function render01Board(){
+  const L = match.leg, n = match.players.length, start = +match.game;
+  const per = match.players.map((_,i)=>L.log.filter(e=>e.i===i));
+  const rounds = Math.max(0, ...per.map(a=>a.length));
+  const cell = e => !e ? ["",""] : e.bust ? [`<td class="bust">BUST</td>`, `<td class="lf">${e.left}</td>`] : [`<td class="sc">${e.v}</td>`, `<td class="lf">${e.left}</td>`];
+  if(n===2){
+    let rows = `<tr class="start"><td class="sc"></td><td class="lf">${start}</td><td class="rn"></td><td class="sc"></td><td class="lf">${start}</td></tr>`;
+    for(let r=0;r<rounds;r++){
+      const a = per[0][r], b = per[1][r];
+      const [as, al] = a ? cell(a) : ["<td></td>","<td></td>"];
+      const [bs, bl] = b ? cell(b) : ["<td></td>","<td></td>"];
+      rows += `<tr>${as}${al}<td class="rn">${r+1}</td>${bs}${bl}</tr>`;
+    }
+    return `<table class="hist">${rows}</table>`;
+  }
+  let head = `<tr><th style="width:44px">Rnd</th>${match.players.map(p=>`<th>${esc(p.name)}</th>`).join("")}</tr>`;
+  let rows = `<tr class="start"><td class="rn" style="width:44px"></td>${match.players.map(()=>`<td class="cell">${start}</td>`).join("")}</tr>`;
+  for(let r=0;r<rounds;r++){
+    rows += `<tr><td class="rn">${r+1}</td>${per.map(a=>{ const e=a[r]; if(!e) return "<td></td>";
+      return `<td class="cell"><small>${e.bust?"BUST":e.v}</small>${e.left}</td>`; }).join("")}</tr>`;
+  }
+  return `<table class="hist">${head}${rows}</table>`;
+}
+function renderCricketBoard(){
+  const L = match.leg, n = match.players.length;
+  const leftN = Math.ceil(n/2), left = [...Array(leftN).keys()], right = [...Array(n-leftN).keys()].map(k=>k+leftN);
+  const cols = `${"minmax(0,1fr) ".repeat(left.length)}58px 76px 58px ${"minmax(0,1fr) ".repeat(right.length)}`;
+  const dis = match.over ? "disabled" : "";
+  let html = "";
+  if(n>2){
+    html += left.map(i=>`<div class="lbl">${esc(match.players[i].name)}</div>`).join("") + `<div></div><div></div><div></div>` +
+            right.map(i=>`<div class="lbl">${esc(match.players[i].name)}</div>`).join("");
+  }
+  for(const t of TARGETS){
+    const dead = L.p.every(p=>p.marks[t]===3) ? "dead" : "";
+    html += left.map(i=>`<div class="mk ${dead}">${MARK[L.p[i].marks[t]]}</div>`).join("");
+    html += `<button type="button" class="cmod ${dead}" data-n="${t}" data-m="2" ${dis}>D</button>`;
+    html += `<button type="button" class="cnum ${dead}" data-n="${t}" data-m="1" ${dis}>${t===25?"B":t}</button>`;
+    html += t===25 ? `<div></div>` : `<button type="button" class="cmod ${dead}" data-n="${t}" data-m="3" ${dis}>T</button>`;
+    html += right.map(i=>`<div class="mk ${dead}">${MARK[L.p[i].marks[t]]}</div>`).join("");
+  }
+  const lasts = match.players.map((pl,i)=>{ const l=L.p[i].last; return l ? `${esc(pl.name)}: ${esc(l.darts.join(" "))} (${l.marks} mk)` : ""; }).filter(Boolean);
+  return `<div class="cg" style="grid-template-columns:${cols}">${html}</div>
+    ${lasts.length?`<div class="hint" style="padding:0 12px 10px;text-align:center">${lasts.join(" · ")}</div>`:""}`;
+}
+function renderBar(){
+  const o = match.opts, n = match.players.length;
+  const kil = oneGame(match.game);
+  const rr = isRG(match.game) ? rgRounds() : null;
+  const t = match.game==="halveit" ? `Round ${roundNo()}/12` : rr ? `${match.game==="golf"?"Hole":match.game==="baseball"?"Inning":"Round"} ${roundNo()}/${rr.length}` : match.game==="atc" ? `Turn ${roundNo()}` : kil ? `${match.leg.p.filter(q=>!q.out).length} of ${n} left` : `${o.sets>1?`Set ${match.setNo} · `:""}Leg ${match.legNo}`;
+  let s = "";
+  if(n===2 && !kil) s = o.sets>1 ? `${match.players[0].sets}-${match.players[1].sets} · ${match.players[0].legs}-${match.players[1].legs}` : `${match.players[0].legs} - ${match.players[1].legs}`;
+  return `<div class="bar"><button type="button" class="ib" data-act="quit" aria-label="Menu">✕</button>
+    <span class="bt">${shortName(match.game)} · ${t}</span><span class="bs">${s}${online ? ` <button type="button" class="codechip" data-act="share">● ${esc(online.code)}</button>` : ""}</span>
+    <button type="button" class="ib" data-act="undo" aria-label="Undo" ${hist.length?"":"disabled"}>↶</button></div>`;
+}
+function render01Dock(){
+  const p = match.leg.p[match.cur], dbl = match.opts.outMode==="double";
+  let disp, cls = "";
+  if(entry){ disp = entry; cls = "typed"; }
+  else if(!p.isIn) disp = "Double-In";
+  else {
+    const co = checkout(p.score, 3, dbl);
+    if(co && p.score<=170){ disp = co.join(" · "); cls = "co"; }
+    else if(p.turns===0) disp = match.opts.inMode==="double" ? "Double-In" : "Straight-In";
+    else disp = `<span class="muted">${esc(match.players[match.cur].name)} to throw</span>`;
+  }
+  const q = (v)=>`<button type="button" class="q" data-score="${v}">${v}</button>`;
+  const k = (d)=>`<button type="button" class="k" data-digit="${d}">${d}</button>`;
+  const dis = match.over ? "disabled" : "";
+  return `<div class="dock">
+    <div class="entry"><button type="button" class="back" data-act="back">BACK</button>
+      <div class="disp ${cls}" aria-live="polite">${disp}</div>
+      <button type="button" class="miss" data-score="0" ${dis}>MISS</button></div>
+    <div class="pad">
+      ${q(26)}${k(1)}${k(2)}${k(3)}${q(45)}
+      ${q(40)}${k(4)}${k(5)}${k(6)}${q(60)}
+      ${q(41)}${k(7)}${k(8)}${k(9)}${q(81)}
+      ${q(43)}<button type="button" class="k g" data-score="100">100</button><button type="button" class="k r" data-score="180">180</button><button type="button" class="k g" data-score="140">140</button>${q(85)}
+      ${q(57)}${k(0)}<button type="button" class="enter" data-act="enter" ${entry?"":"disabled"}>ENTER</button>${q(95)}
+    </div></div>`;
+}
+function renderCricketDock(){
+  const name = esc(match.players[match.cur].name), left = 3 - match.turn.length;
+  const slots = [0,1,2].map(k=>{ const d = match.turn[k];
+    return d ? `<span class="dart ${d.counted?"":"void"}">${dartLabel(d.n,d.m)}</span>` : `<span class="dart empty">${k+1}</span>`; }).join("");
+  const dis = match.over ? "disabled" : "";
+  return `<div class="dock">
+    <div class="throwing"><span class="tname">${name}</span> is throwing · <b>${left} dart${left===1?"":"s"} left</b>${isCricket(match.game)&&match.turn.length?` · ${match.turnMarks} mk`:""}</div>
+    <div class="entry"><button type="button" class="back" data-act="undo" ${hist.length?"":"disabled"}>BACK</button>
+    <div class="disp" aria-live="polite">${slots}</div>
+    <button type="button" class="miss" data-act="crest" ${dis}>${match.turn.length?"END<br>TURN":"MISS"}</button></div></div>`;
+}
+function renderOverlay(){
+  if(dialog==="rules") return rulesOverlay(match.game, match.opts);
+  if(dialog==="share") return onlineOverlay();
+  if(dialog==="quit") return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="qh">
+    <h2 id="qh">Menu</h2><div class="hint">Leaving keeps this match saved on this device, so you can resume it from the start screen.</div>
+    <div class="btns"><button type="button" class="secondary" data-act="rules">How to play ${esc(shortName(match.game))}</button>
+    <button type="button" class="primary" data-act="toSetup">Leave match</button>
+    <button type="button" class="secondary" data-act="closeDlg">Keep playing</button></div></div></div>`;
+  if(pending) return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ph">
+    <h2 id="ph">Game shot! Darts used to check out ${pending.score}?</h2>
+    <div class="dchoice">${[1,2,3].map(d=>`<button type="button" data-fin="${d}" ${pending.opts.includes(d)?"":"disabled"}>${d}</button>`).join("")}</div>
+    <button type="button" class="secondary" data-act="cancelFin">Cancel</button></div></div>`;
+  const o = match.over; if(!o) return "";
+  const w = esc(match.players[o.winner].name), legScore = o.legScore.join("–"), setScore = o.setScore ? o.setScore.join("–") : "";
+  let title, line;
+  if(o.type==="match" && isRG(match.game)){
+    const P = match.leg.p[o.winner], g = match.game;
+    title = o.tie ? `Tie: ${o.tie.map(i=>esc(match.players[i].name)).join(" & ")}` : match.players.length===1 ? `${shortName(g)} complete` : `${w} wins ${esc(shortName(g))}`;
+    line = g==="golf" ? `${P.total} strokes` : g==="atc" ? `Finished in ${P.darts} darts` : g==="bobs" && P.out ? "Everyone dropped below 0" : g==="baseball" ? `${P.total} runs` : `Final score ${P.total}`;
+    if(o.instant) line = `Shanghai on ${rgTarget()}!`;
+  }
+  else if(o.type==="match" && match.game==="halveit"){
+    const best = match.leg.p[o.winner].total;
+    title = o.tie ? `Tie: ${o.tie.map(i=>esc(match.players[i].name)).join(" & ")}` : `${w} wins Halve-It`;
+    line = `Final score ${best}`;
+  }
+  else if(o.type==="match" && match.game==="killer"){ title = `${w} wins Killer`; line = "Last one standing"; }
+  else if(o.type==="match"){ title = `${w} wins the match`; line = match.opts.sets>1 ? `Sets ${setScore}` : `Legs ${legScore}`; }
+  else if(o.type==="set"){ title = `${w} wins set ${match.setNo}`; line = `Legs ${legScore} · Sets ${setScore}`; }
+  else { title = `${w} wins leg ${match.legNo}`; line = `Legs ${legScore}${match.opts.sets>1?` in set ${match.setNo}`:""}`; }
+  const extra = o.checkout ? `Checked out ${o.checkout} · ${o.darts}-dart leg` : match.game==="killer" ? `${o.darts} darts thrown` : match.game==="halveit" ? "After 12 rounds" : isRG(match.game) ? `${match.leg.p[o.winner].darts} darts thrown` : `Won in ${o.darts} darts`;
+  const statLabel = is01(match.game) ? "3-dart avg" : match.game==="killer" ? "Lives taken" : match.game==="golf" ? "Strokes" : match.game==="atc" ? "Progress" : match.game==="baseball" ? "Runs" : oneGame(match.game) ? "Score" : "MPR";
+  const kil = oneGame(match.game);
+  const stats = o.type==="match" ? `<table class="stats"><thead><tr><th>Player</th>${match.opts.sets>1?"<th>Sets</th>":""}${kil?"":"<th>Legs</th>"}<th>${statLabel}</th></tr></thead><tbody>
+    ${match.players.map((pl,i)=>`<tr><td>${esc(pl.name)}</td>${match.opts.sets>1?`<td>${pl.sets}</td>`:""}${kil?"":`<td>${pl.legsTotal}</td>`}<td>${avgText(i)}</td></tr>`).join("")}</tbody></table>` : "";
+  const btns = o.type==="match"
+    ? `<button type="button" class="primary" data-act="rematch">Rematch</button><button type="button" class="secondary" data-act="toSetup">New game</button>`
+    : `<button type="button" class="primary" data-act="nextLeg">${o.type==="set"?"Start next set":"Next leg"}</button>`;
+  return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="oh">
+    <h2 id="oh">${title}</h2><div class="bigl">${line}</div><div class="hint">${extra}</div>${stats}
+    <div class="btns">${btns}<button type="button" class="secondary" data-act="undo">Undo last score</button></div></div></div>`;
+}
+const SKULL = `<svg class="skull" viewBox="0 0 64 72" role="img" aria-label="Killer"><title>Killer</title>
+  <defs>
+    <linearGradient id="fl" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff3b00"/><stop offset=".55" stop-color="#ff8a00"/><stop offset="1" stop-color="#ffd23a"/></linearGradient>
+    <radialGradient id="eye" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ff6060"/><stop offset=".5" stop-color="#ff0000"/><stop offset="1" stop-color="#7a0000"/></radialGradient>
+  </defs>
+  <path fill="url(#fl)" d="M32 2c4 8-2 11 3 17 2-5 6-7 6-12 6 7 4 13 8 16 1-4 4-6 3-11 7 9 9 20 4 30H12C6 34 9 23 15 15c0 5 2 7 4 10 1-7 5-9 4-17 4 5 3 9 6 11 1-6 0-11 3-17z"/>
+  <path fill="#efe9dc" d="M32 22c-13 0-21 9-21 20 0 7 3 11 7 14v7c0 2 2 3 4 3h20c2 0 4-1 4-3v-7c4-3 7-7 7-14 0-11-8-20-21-20z"/>
+  <ellipse cx="23.5" cy="42" rx="6" ry="6.5" fill="#1a0000"/><ellipse cx="40.5" cy="42" rx="6" ry="6.5" fill="#1a0000"/>
+  <circle cx="23.5" cy="42.5" r="3.6" fill="url(#eye)"/><circle cx="40.5" cy="42.5" r="3.6" fill="url(#eye)"/>
+  <path fill="#1a0000" d="M32 49l-3.2 5.5h6.4z"/>
+  <path stroke="#1a0000" stroke-width="1.8" d="M26 59v7M32 59v7M38 59v7"/>
+</svg>`;
+function pips(lives, max){
+  return Array.from({length:max},(_,k)=>`<span class="pip ${k<lives?"on":""}"></span>`).join("");
+}
+function renderKillerBoard(){
+  const L = match.leg, max = match.opts.lives, n = match.players.length, picking = L.phase==="pick";
+  const order = [...Array(n).keys()].map(k=>(match.legStarter+k)%n);
+  const dis = match.over ? "disabled" : "";
+  const rows = order.map(i=>{
+    const p = L.p[i], pl = match.players[i], active = i===match.cur && !match.over;
+    const killer = !p.out && p.lives===max;
+    const status = p.out ? `<span class="kchip out">OUT</span>` : killer ? SKULL : "";
+    const info = `<div class="kinfo"><div class="kname">${esc(pl.name)} ${status}</div>
+      <div class="ksub">${picking ? "" : `<span class="pips" aria-label="${Math.max(0,p.lives)} of ${max} lives">${pips(p.lives,max)}</span>`}
+      </div></div>`;
+    if(picking) return `<div class="kr ${active?"active":""}">${info}<div class="knum">${p.num===null ? "–" : p.num===25 ? "Bull" : p.num}</div></div>`;
+    const thrower = L.p[match.cur], throwerKiller = thrower.lives===max && !thrower.out;
+    const off = p.out || dis || (i!==match.cur && (!throwerKiller || p.turns===0)) ? "disabled" : "";
+    const bull = p.num===25;
+    return `<div class="kr play ${active?"active":""} ${p.out?"out":""}">${info}
+      <button type="button" class="cmod" data-kn="${p.num}" data-m="2" ${off} aria-label="${bull?"Double bull":"Double "+p.num}">D</button>
+      <button type="button" class="cnum" data-kn="${p.num}" data-m="1" ${off}>${bull?"B":p.num}</button>
+      ${bull ? "<div></div>" : `<button type="button" class="cmod" data-kn="${p.num}" data-m="3" ${off}>T</button>`}</div>`;
+  }).join("");
+  const lasts = order.map(i=>L.p[i].last ? `${esc(match.players[i].name)}: ${esc(L.p[i].last.join(" "))}` : "").filter(Boolean);
+  return `<div class="kl">${rows}</div>${lasts.length?`<div class="hint" style="padding:0 12px 10px;text-align:center">${lasts.join(" · ")}</div>`:""}`;
+}
+function renderKillerDock(){
+  const L = match.leg;
+  if(L.phase==="pick"){
+    const used = L.p.map(q=>q.num);
+    const canReuse = match.lastNums && match.lastNums.length===match.players.length && L.p.every(q=>q.num===null);
+    const keys = [...Array(20).keys()].map(k=>k+1).concat([25]).map(n=>`<button type="button" class="k ${n===25?"bullk":""}" data-pick="${n}" ${used.includes(n)?"disabled":""}>${n===25?"Bull":n}</button>`).join("");
+    return `<div class="dock"><div class="entry"><button type="button" class="back" data-act="undo" ${hist.length?"":"disabled"}>BACK</button>
+      <div class="disp"><span class="muted">${esc(match.players[match.cur].name)}: throw for a number</span></div>
+      <button type="button" class="miss" data-act="rand">RANDOM</button></div>
+      <div class="pad np">${keys}</div>
+      ${canReuse ? `<button type="button" class="secondary" data-act="reuse">Keep last leg's numbers</button>` : ""}</div>`;
+  }
+  return renderCricketDock();
+}
+function renderHalveBoard(){
+  const L = match.leg, n = match.players.length;
+  const head = `<tr><th class="rt">Target</th>${match.players.map((pl,i)=>`<th class="${i===match.cur&&!match.over?"on":""}">${esc(pl.name)}</th>`).join("")}</tr>`;
+  const rows = HALVE.map((t,r)=>{
+    const cur = r===L.round && !match.over;
+    const cells = L.p.map((p,i)=>{
+      const h = p.hist[r];
+      if(!h) return `<td class="${cur && i===match.cur ? "now" : ""}"></td>`;
+      const tag = h.halved ? `<small class="half">½</small>` : `<small>+${h.score}${h.choice?` <i>(${h.choice===25?"B":h.choice})</i>`:""}</small>`;
+      return `<td>${tag}${h.total}</td>`;
+    }).join("");
+    return `<tr class="${cur?"cur":""} ${r<L.round?"done":""}" ${cur?'id="hcur"':""}><td class="rt">${halveLabel(t)}</td>${cells}</tr>`;
+  }).join("");
+  return `<table class="ht">${head}${rows}</table>`;
+}
+function renderHalveDock(){
+  const t = halveTarget(), dis = match.over ? "disabled" : "";
+  const name = esc(match.players[match.cur].name);
+  if(!match.over && t==="CHOICE" && !match.choice){
+    const keys = [...Array(20).keys()].map(k=>k+1).concat([25]).map(n=>`<button type="button" class="k ${n===25?"bullk":""}" data-ch="${n}">${n===25?"Bull":n}</button>`).join("");
+    return `<div class="dock"><div class="throwing"><span class="tname">${name}</span>: call your number</div>
+      <div class="entry"><button type="button" class="back" data-act="undo" ${hist.length?"":"disabled"}>BACK</button>
+      <div class="disp"><span class="muted">Choice round</span></div><div></div></div>
+      <div class="pad np">${keys}</div></div>`;
+  }
+  if(t==="EVEN" || t==="ODD"){
+    const q = v=>`<button type="button" class="q" data-score="${v}" ${dis}>${v}</button>`;
+    const k = d=>`<button type="button" class="k" data-digit="${d}" ${dis}>${d}</button>`;
+    const disp = entry ? entry : `<span class="muted">Enter 3-dart total</span>`;
+    return `<div class="dock">
+    <div class="throwing"><span class="tname">${name}</span> · <b>${t}</b> · total must be ${t.toLowerCase()}</div>
+    <div class="entry"><button type="button" class="back" data-act="back">BACK</button>
+      <div class="disp ${entry?"typed":""}">${disp}</div>
+      <button type="button" class="miss" data-score="0" ${dis}>MISS</button></div>
+    <div class="pad p3">
+      ${k(1)}${k(2)}${k(3)}${k(4)}${k(5)}${k(6)}${k(7)}${k(8)}${k(9)}
+      ${k(0)}<button type="button" class="enter" data-act="enter" ${entry?"":"disabled"}>ENTER</button>
+    </div></div>`;
+  }
+  const left = 3 - match.turn.length;
+  const slots = [0,1,2].map(k=>{ const d = match.turn[k];
+    return d ? `<span class="dart ${d.counted?"":"void"}">${dartLabel(d.n,d.m)}</span>` : `<span class="dart empty">${k+1}</span>`; }).join("");
+  const running = match.turn.length ? ` · ${halveScore(match.turn, t, match.choice)||"0"} so far` : "";
+  const btn = (n,m,label,cls="") => `<button type="button" class="k ${cls}" data-hd="${n}" data-hmm="${m}" ${dis}>${label}</button>`;
+  const single = typeof t==="number" ? t : t==="CHOICE" ? match.choice : null;
+  let input;
+  if(single===25 || t==="BULL")
+    input = `<div class="pad big2">${btn(25,1,"Single Bull 25","g")}${btn(25,2,"Double Bull 50","r")}</div>`;
+  else if(single)
+    input = `<div class="pad big3">${btn(single,1,`<small>Single</small>${single}`)}${btn(single,2,`<small>Double</small>D${single}`,"g")}${btn(single,3,`<small>Triple</small>T${single}`,"r")}</div>`;
+  else if(t==="TRIPLE")
+    input = `<div class="pad np">${[...Array(20).keys()].map(k=>btn(k+1,3,"T"+(k+1))).join("")}</div>`;
+  else if(t==="DOUBLE")
+    input = `<div class="pad np">${[...Array(20).keys()].map(k=>btn(k+1,2,"D"+(k+1))).join("")}${btn(25,2,"Bull 50","bullk")}</div>`;
+  else {
+    const keys = [...Array(20).keys()].map(k=>k+1).map(n=>`<button type="button" class="k" data-hd="${n}" ${dis}>${n}</button>`).join("");
+    input = `<div class="mods">${[[1,"Single"],[2,"Double"],[3,"Triple"]].map(([m,l])=>`<button type="button" data-hm="${m}" aria-pressed="${mod===m}">${l}</button>`).join("")}</div>
+    <div class="pad np m${mod}">${keys}<button type="button" class="k bullk" data-hd="25" ${mod===3||dis?"disabled":""}>${mod===2?"Bull 50":"Bull 25"}</button></div>`;
+  }
+  return `<div class="dock">
+    <div class="throwing"><span class="tname">${name}</span> · <b>${modeText()}</b> · ${left} dart${left===1?"":"s"} left${running}</div>
+    <div class="entry"><button type="button" class="back" data-act="undo" ${hist.length?"":"disabled"}>BACK</button>
+      <div class="disp">${slots}</div>
+      <button type="button" class="miss" data-act="crest" ${dis}>${match.turn.length?"END<br>TURN":"MISS"}</button></div>
+    ${input}
+  </div>`;
+}
+function renderRGBoard(){
+  const L = match.leg, g = match.game;
+  if(g==="atc"){
+    return `<div class="atc">${match.players.map((pl,i)=>{
+      const P = L.p[i], on = i===match.cur && !match.over;
+      return `<div class="pr ${on?"on":""}"><div class="pn">${esc(pl.name)} · ${P.darts} darts</div><div class="chips">${ATC_T.map((t,k)=>
+        `<span class="c ${k<P.pos?"done":k===P.pos?"next":""}">${t===25?"B":t}</span>`).join("")}</div></div>`;
+    }).join("")}</div>`;
+  }
+  const rounds = rgRounds();
+  const head = `<tr><th class="rt">${g==="golf"?"Hole":g==="baseball"?"Inning":"Round"}</th>${match.players.map((pl,i)=>`<th class="${i===match.cur&&!match.over?"on":""}">${esc(pl.name)}</th>`).join("")}</tr>`;
+  const rows = rounds.map((t,r)=>{
+    const cur = r===L.round && !match.over;
+    const cells = L.p.map((P,i)=>{
+      const h = P.hist[r];
+      if(!h) return `<td class="${cur && i===match.cur ? "now" : ""}">${P.out && r>=P.hist.length ? `<small>out</small>` : ""}</td>`;
+      return `<td><small class="${h.score<0?"half":""}">${esc(h.tag)}</small>${h.total}</td>`;
+    }).join("");
+    return `<tr class="${cur?"cur":""}" ${cur?'id="hcur"':""}><td class="rt">${rgRowLabel(t)}</td>${cells}</tr>`;
+  }).join("");
+  const start = g==="bobs" ? `<tr><td class="rt">Start</td>${L.p.map(()=>`<td>27</td>`).join("")}</tr>` : "";
+  return `<table class="ht">${head}${start}${rows}</table>`;
+}
+function renderRGDock(){
+  const g = match.game, t = rgTarget(), dis = match.over ? "disabled" : "";
+  const name = esc(match.players[match.cur].name);
+  const back = `<button type="button" class="back" data-act="${g==="countup"?"back":"undo"}" ${g==="countup"||hist.length?"":"disabled"}>BACK</button>`;
+  if(g==="countup"){
+    const q = v=>`<button type="button" class="q" data-score="${v}" ${dis}>${v}</button>`;
+    const k = d=>`<button type="button" class="k" data-digit="${d}" ${dis}>${d}</button>`;
+    return `<div class="dock">
+    <div class="throwing"><span class="tname">${name}</span> · round ${roundNo()} of ${rgRounds().length}</div>
+    <div class="entry">${back}<div class="disp ${entry?"typed":""}">${entry || `<span class="muted">Enter 3-dart score</span>`}</div>
+      <button type="button" class="miss" data-score="0" ${dis}>MISS</button></div>
+    <div class="pad">
+      ${q(26)}${k(1)}${k(2)}${k(3)}${q(45)}
+      ${q(40)}${k(4)}${k(5)}${k(6)}${q(60)}
+      ${q(41)}${k(7)}${k(8)}${k(9)}${q(81)}
+      ${q(43)}<button type="button" class="k g" data-score="100" ${dis}>100</button><button type="button" class="k r" data-score="180" ${dis}>180</button><button type="button" class="k g" data-score="140" ${dis}>140</button>${q(85)}
+      ${q(57)}${k(0)}<button type="button" class="enter" data-act="enter" ${entry?"":"disabled"}>ENTER</button>${q(95)}
+    </div></div>`;
+  }
+  if(g==="bobs"){
+    const lbl = t===25 ? "D-Bull" : "D"+t, val = t===25 ? 50 : 2*t;
+    return `<div class="dock">
+    <div class="throwing"><span class="tname">${name}</span> · <b>${lbl}</b> · hits add ${val}, a full miss takes off ${val}</div>
+    <div class="entry">${back}<div class="disp">${lbl}</div><div></div></div>
+    <div class="pad p4">${[0,1,2,3].map(h=>`<button type="button" class="k ${h===0?"r":h===3?"g":""}" data-bobs="${h}" ${dis}><small>${h===1?"hit":"hits"}</small>${h}</button>`).join("")}</div></div>`;
+  }
+  const left = 3 - match.turn.length;
+  const slots = [0,1,2].map(k=>{ const d = match.turn[k];
+    if(!d) return `<span class="dart empty">${k+1}</span>`;
+    const lab = g==="golf" ? d.golf.s : g==="atc" ? (d.counted ? (d.n===25?"Bull":d.n) : "Miss") : dartLabel(d.n,d.m);
+    return `<span class="dart ${d.counted?"":"void"}">${lab}</span>`; }).join("");
+  if(g==="golf"){
+    const cur = match.turn.length ? match.turn[match.turn.length-1].golf : null;
+    return `<div class="dock">
+    <div class="throwing"><span class="tname">${name}</span> · <b>Hole ${t}</b> · ${left} dart${left===1?"":"s"} left${cur?` · keeping ${cur.v}`:""}</div>
+    <div class="entry">${back}<div class="disp">${slots}</div>
+      <button type="button" class="miss" data-act="crest" ${match.turn.length&&!dis?"":"disabled"}>KEEP<br>SCORE</button></div>
+    <div class="pad p4">
+      <button type="button" class="k g" data-rg="${t}" data-m="2" ${dis}><small>Double</small>1</button>
+      <button type="button" class="k r" data-rg="${t}" data-m="3" ${dis}><small>Triple</small>2</button>
+      <button type="button" class="k" data-rg="${t}" data-m="1" ${dis}><small>Single</small>3</button>
+      <button type="button" class="k" data-rg="0" data-m="0" ${dis}><small>Miss</small>5</button>
+    </div></div>`;
+  }
+  const endBtn = `<button type="button" class="miss" data-act="crest" ${dis}>${match.turn.length?"END<br>TURN":"MISS"}</button>`;
+  if(g==="atc"){
+    const lbl = t===25 ? "Bull" : t;
+    return `<div class="dock">
+    <div class="throwing"><span class="tname">${name}</span> · aiming at <b>${lbl}</b> · ${left} dart${left===1?"":"s"} left</div>
+    <div class="entry">${back}<div class="disp">${slots}</div>${endBtn}</div>
+    <div class="pad big2"><button type="button" class="k g" data-rg="${t}" data-m="1" ${dis}>Hit ${lbl}</button><button type="button" class="k" data-rg="0" data-m="0" ${dis}>Miss</button></div></div>`;
+  }
+  // shanghai / baseball
+  const sub = g==="baseball" ? ["1 run","2 runs","3 runs"] : ["Single","Double","Triple"];
+  return `<div class="dock">
+    <div class="throwing"><span class="tname">${name}</span> · <b>${g==="baseball"?"Inning":"Round"} ${t}</b> · ${left} dart${left===1?"":"s"} left</div>
+    <div class="entry">${back}<div class="disp">${slots}</div>${endBtn}</div>
+    <div class="pad big3">
+      <button type="button" class="k" data-rg="${t}" data-m="1" ${dis}><small>${sub[0]}</small>${t}</button>
+      <button type="button" class="k g" data-rg="${t}" data-m="2" ${dis}><small>${sub[1]}</small>D${t}</button>
+      <button type="button" class="k r" data-rg="${t}" data-m="3" ${dis}><small>${sub[2]}</small>T${t}</button>
+    </div></div>`;
+}
+function renderGame(){
+  const x01 = is01(match.game), kil = match.game==="killer", hv = match.game==="halveit", rg = isRG(match.game);
+  app.innerHTML = `<div class="game">${kil ? `<div class="roundline"><span>${L_round()}</span><span class="mode">${modeText()}</span></div>` : renderHeader()}
+    <div class="board" id="board">${x01 ? render01Board() : kil ? renderKillerBoard() : hv ? renderHalveBoard() : rg ? renderRGBoard() : renderCricketBoard()}</div>
+    ${renderBar()}${x01 ? render01Dock() : kil ? renderKillerDock() : hv ? renderHalveDock() : rg ? renderRGDock() : renderCricketDock()}</div>${renderOverlay()}`;
+  if(hv || rg){ const c = document.getElementById("hcur"), b = document.getElementById("board"); if(c && b) b.scrollTop = c.offsetTop - b.clientHeight/2 + c.offsetHeight/2; }
+  if(x01){ const b = document.getElementById("board"); b.scrollTop = b.scrollHeight; }
+}
+function render(){
+  if(screen==="game" && match){
+    renderGame();
+    if(online && !match.over && !isMyTurn()){
+      const dock = app.querySelector(".dock");
+      if(dock){ dock.classList.add("locked"); dock.insertAdjacentHTML("beforeend", `<div class="lockmsg">Waiting for ${esc(match.players[match.cur].name)}…</div>`); }
+    }
+  } else renderSetup();
+}
+
+/* ---------- events ---------- */
+app.addEventListener("click", e=>{
+  const b = e.target.closest("button"); if(!b || b.disabled) return;
+  const d = b.dataset;
+  if(d.claim!==undefined){
+    const i = +d.claim;
+    if(dialog==="join" && joinState){
+      const owner = joinState.claims[i]; if(owner && owner!==deviceId) return;
+      joinState.pick = joinState.pick.includes(i) ? joinState.pick.filter(x=>x!==i) : joinState.pick.concat([i]); render();
+    } else toggleClaim(i);
+    return;
+  }
+  if(online && screen==="game" && match){
+    const free = ["quit","rules","closeRules","closeDlg","toSetup","share","copyInvite","nextLeg","rematch","undo"];
+    if(d.act==="undo" || (d.act==="back" && !entry)){
+      if(match.by!==deviceId){ msg("Only the phone that entered the last score can undo it"); return; }
+    } else if(!free.includes(d.act) && !match.over && !isMyTurn()){ msg(`It's ${match.players[match.cur].name}'s turn`); return; }
+  }
+  if(d.set){ settings[d.set] = d.set==="points" ? d.val==="true" : ["lives","shRounds","cuRounds"].includes(d.set) ? +d.val : d.val; save(); render(); return; }
+  if(d.cat){ const c = CATS.find(x=>x[0]===d.cat); if(catOf(settings.game)!==d.cat) settings.game = c[2][0]; save(); render(); return; }
+  if(d.rg!==undefined){ rgDart(+d.rg, +d.m); return; }
+  if(d.bobs!==undefined){ bobsHits(+d.bobs); return; }
+  if(d.pick){ pickNumber(+d.pick); return; }
+  if(d.kn!==undefined){ killerDart(+d.kn, +d.m); return; }
+  if(d.hm){ mod = +d.hm; render(); return; }
+  if(d.hd!==undefined){ halveDart(+d.hd, d.hmm ? +d.hmm : mod); return; }
+  if(d.ch){ pickChoice(+d.ch); return; }
+  if(d.step){ settings[d.step] = Math.min(15, Math.max(1, settings[d.step] + +d.d)); save(); render(); return; }
+  if(d.rm){ settings.players.splice(+d.rm,1); save(); render(); return; }
+  if(d.digit!==undefined){ if(entry.length<3 && !(entry==="" && d.digit==="0")) entry += d.digit; render(); return; }
+  if(d.score!==undefined){ submitScore(+d.score); return; }
+  if(d.fin){ finish(+d.fin); return; }
+  if(d.n!==undefined){ throwDart(+d.n, +d.m); return; }
+  switch(d.act){
+    case "addp": settings.players.push(`Player ${settings.players.length+1}`); save(); render();
+      setTimeout(()=>{ const el=document.getElementById(`pl-${settings.players.length-1}`); if(el){ el.focus(); el.select(); } },0); break;
+    case "start": goOffline(); startMatch(); break;
+    case "resume": goOffline(); screen = "game"; render(); break;
+    case "host": hostOnline(); break;
+    case "join": { const el = document.getElementById("joincode"); lookupGame(el ? el.value : ""); break; }
+    case "confirmJoin": confirmJoin(); break;
+    case "rejoin": rejoinOnline(); break;
+    case "forget": goOffline(); render(); break;
+    case "share": dialog = "share"; render(); break;
+    case "copyInvite": {
+      const text = `Join my darts game: ${location.href.split("#")[0]} (code ${online ? online.code : ""})`;
+      try{ navigator.clipboard.writeText(text).then(()=>msg("Invite copied"), ()=>msg(text)); }catch(err){ msg(text); }
+      break;
+    }
+    case "undo": undo(); break;
+    case "back": if(entry){ entry = entry.slice(0,-1); render(); } else undo(); break;
+    case "enter": if(entry) submitScore(+entry); break;
+    case "crest": if(isRG(match.game)) rgRest(); else cricketRest(); break;
+    case "rules": dialog = "rules"; render(); break;
+    case "closeRules": dialog = screen==="game" ? "quit" : null; render(); break;
+    case "rand": randomPick(); break;
+    case "reuse": reuseNumbers(); break;
+    case "cancelFin": pending = null; render(); break;
+    case "nextLeg": nextLeg(); break;
+    case "quit": dialog = "quit"; render(); break;
+    case "closeDlg": dialog = null; render(); break;
+    case "toSetup": dialog = null; screen = "setup"; stopListening(); online = null; remoteClaims = {}; render(); break;
+    case "rematch": {
+      const pv = match;
+      Object.assign(settings, { game:pv.game, inMode:pv.opts.inMode, outMode:pv.opts.outMode, points:pv.opts.points, lives:pv.opts.lives||3, sets:pv.opts.sets, legs:pv.opts.legs, players:pv.players.map(p=>p.name) });
+      startMatch(); break;
+    }
+  }
+});
+app.addEventListener("input", e=>{ const i = e.target.dataset.pl; if(i===undefined) return; settings.players[+i] = e.target.value; save(); });
+document.addEventListener("keydown", e=>{
+  if(screen!=="game" || !match || dialog || e.target.tagName==="INPUT") return;
+  if((e.ctrlKey||e.metaKey) && e.key==="z"){ e.preventDefault(); if(!online || match.by===deviceId) undo(); return; }
+  if(online && !isMyTurn()) return;
+  const totalEntry = is01(match.game) || match.game==="countup" || (match.game==="halveit" && ["EVEN","ODD"].includes(halveTarget()));
+  if(!totalEntry || match.over || pending) return;
+  if(/^[0-9]$/.test(e.key)){ if(entry.length<3 && !(entry==="" && e.key==="0")) entry += e.key; render(); }
+  else if(e.key==="Backspace"){ entry = entry.slice(0,-1); render(); }
+  else if(e.key==="Enter" && entry){ submitScore(+entry); }
+});
+
+load();
+render();
+})();
+</script>
+</body>
+</html>
