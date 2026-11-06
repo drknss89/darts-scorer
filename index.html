@@ -561,7 +561,8 @@ function buildRecord(m){
     : `${m.players[o.winner].name} won` + (!oneGame(m.game) ? (m.opts.sets>1 ? ` ${m.players.map(p=>p.sets).join("–")} in sets` : ` ${m.players.map(p=>p.legsTotal).join("–")} in legs`) : "");
   const stats = m.players.map((p,i)=>playerStats(m,i));
   stats.forEach((st,i)=>{ st.raw.won = winners.includes(i); st.raw.place = order.indexOf(i)+1; });
-  return { id:m.id, game:m.game, title:gameName(m.game, m.opts), date:m.started||Date.now(), result,
+  stats.forEach((st,i)=>{ if(oneGame(m.game)) st.raw.darts = m.leg.p[i].darts; });
+  return { id:m.id, game:m.game, opts:m.opts, title:gameName(m.game, m.opts), date:m.started||Date.now(), end:Date.now(), result, tlog:m.tlog||[],
     players: m.players.map((p,i)=>({ name:p.name, pid:p.pid||null, place: order.indexOf(i)+1, rows: stats[i].rows, raw: stats[i].raw })),
     breakdown: breakdown(m) };
 }
@@ -603,37 +604,192 @@ async function updateCareer(pid, name, raws){
 
 /* ---- email report ---- */
 const H = s => esc(s);
-function statsTableHtml(rec){
-  const labels = rec.players[0].rows.map(r=>r[0]);
-  const th = `<tr><th style="text-align:left;padding:4px 8px;border-bottom:2px solid #c8102e"></th>${rec.players.map(p=>`<th style="text-align:right;padding:4px 8px;border-bottom:2px solid #c8102e">${H(p.name)}</th>`).join("")}</tr>`;
-  const trs = labels.map((l,k)=>`<tr><td style="padding:3px 8px;color:#555">${H(l)}</td>${rec.players.map(p=>`<td style="text-align:right;padding:3px 8px">${H(p.rows[k] ? p.rows[k][1] : "")}</td>`).join("")}</tr>`).join("");
-  return `<table style="border-collapse:collapse;font-size:14px;margin:6px 0 10px">${th}${trs}</table>`;
+/* ---- recap report (email + on-screen) ---- */
+const NAVY = "#1f3a5f", RED = "#b3122a";
+const fmtTime = t => new Date(t).toLocaleTimeString(undefined,{hour:"numeric", minute:"2-digit"});
+const fmtDur = ms => { const m = Math.max(0, Math.round(ms/60000)); return `${Math.floor(m/60)}:${String(m%60).padStart(2,"0")}`; };
+const parseDart = l => { if(!l || l==="Miss") return {n:0,m:0}; if(l==="Bull") return {n:25,m:2}; if(l==="25") return {n:25,m:1};
+  const m = l[0]==="T" ? 3 : l[0]==="D" ? 2 : 1; return { n: +(m>1 ? l.slice(1) : l), m }; };
+const crHit = d => { const h = d.map(parseDart).filter(x=>x.n>=15); return h.length ? h.map(x=>x.n===25 ? (x.m===2?"DB":"SB") : (x.m===3?"T":x.m===2?"D":"S")+x.n).join(", ") : "∅"; };
+function legsOf(rec){
+  const T = rec.tlog || [], keys = [];
+  T.forEach(e=>{ const k = e.s+"-"+e.l; if(!keys.includes(k)) keys.push(k); });
+  return keys.map(k=>{
+    const E = T.filter(e=>e.s+"-"+e.l===k), [s,l] = k.split("-").map(Number);
+    const turns = E.filter(e=>["01","cr","ki","hv","rg"].includes(e.k));
+    const end = E.find(e=>e.k==="leg");
+    return { s, l, E, turns, winner: end ? end.p : null, starter: turns.length ? turns[0].p : null };
+  });
 }
-function gameHtml(rec, withBreakdown){
-  const bd = withBreakdown ? rec.breakdown.map(b=>`<div style="margin:6px 0 2px;font-weight:bold;font-size:13px">${H(b.head)}</div>${b.lines.map(l=>`<div style="font-family:monospace;font-size:12px;color:#333">${H(l)}</div>`).join("")}`).join("") : "";
-  return `<div style="border-top:1px solid #ddd;padding-top:10px;margin-top:14px">
-    <div style="font-size:18px;font-weight:bold">${H(rec.title)}</div>
-    <div style="color:#c8102e;font-weight:bold;margin:2px 0 6px">${H(rec.result)}</div>
-    ${statsTableHtml(rec)}${bd}</div>`;
+function legPlayerStats(rec, leg, i){
+  const t = leg.turns.filter(e=>e.p===i);
+  if(is01(rec.game)){
+    const darts = t.reduce((a,e)=>a+(e.co?e.darts:3),0), pts = t.reduce((a,e)=>a+(e.bust?0:e.v),0);
+    const left = t.length ? t[t.length-1].left : +rec.game;
+    return { darts, pts, avg: darts ? pts/darts*3 : 0, score: left, rounds: t.length };
+  }
+  if(isCricket(rec.game)){
+    const darts = t.reduce((a,e)=>a+e.d.length,0), marks = t.reduce((a,e)=>a+e.marks,0);
+    const last = leg.turns.filter(e=>e.pts).slice(-1)[0];
+    return { darts, marks, avg: darts ? marks/darts*3 : 0, score: last ? last.pts[i] : 0, rounds: t.length };
+  }
+  return { darts:0, avg:0, score:"", rounds:t.length };
 }
+const TH = (txt, extra="") => `<th bgcolor="${NAVY}" style="color:#fff;padding:5px 6px;font-weight:normal;${extra}">${txt}</th>`;
+const TD = (txt, extra="") => `<td style="padding:3px 6px;${extra}">${txt}</td>`;
+const TBL = inner => `<table cellspacing="0" style="border-collapse:collapse;font-size:13px;width:100%;margin:6px 0 14px">${inner}</table>`;
+const SEC = t => `<div style="font-size:19px;font-weight:bold;margin:22px 0 4px;padding-bottom:4px;border-bottom:3px solid ${RED}">${t}</div>`;
+function gameType(rec){ return is01(rec.game) ? rec.game : NAMES[rec.game] || rec.game; }
+
 function reportHtml(games, forPid, career){
-  const day = new Date(games.length ? games[0].date : Date.now()).toLocaleDateString(undefined,{weekday:"long", month:"long", day:"numeric"});
+  games = games.slice().sort((a,b)=>a.date-b.date);
+  const start = games.length ? Math.min(...games.map(g=>g.date)) : Date.now(), end = games.length ? Math.max(...games.map(g=>g.end||g.date)) : Date.now();
   const names = [...new Set(games.flatMap(g=>g.players.map(p=>p.name)))];
-  const mine = forPid ? games.map(g=>g.players.find(p=>p.pid===forPid)).filter(Boolean) : [];
-  const wins = mine.filter(p=>p.raw.won).length;
-  const you = forPid && mine.length ? `<div style="background:#f6f1e7;border-radius:8px;padding:10px 12px;margin:10px 0">
-    <b>Your night:</b> ${mine.length} game${mine.length===1?"":"s"}, ${wins} win${wins===1?"":"s"}.</div>` : "";
-  const car = career ? `<div style="border-top:1px solid #ddd;padding-top:10px;margin-top:14px"><div style="font-size:18px;font-weight:bold">Your career totals</div>
-    <table style="border-collapse:collapse;font-size:14px;margin-top:6px">${careerRows(career).map(r=>`<tr><td style="padding:3px 8px;color:#555">${H(r[0])}</td><td style="padding:3px 8px;text-align:right">${H(r[1])}</td></tr>`).join("")}</table></div>` : "";
-  const build = bd => `<div style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:640px">
-    <div style="background:#c8102e;color:#fff;padding:12px 14px;border-radius:8px"><div style="font-size:22px;font-weight:bold">Darts night results</div>
-    <div>${H(day)} · ${H(names.join(", "))} · ${games.length} game${games.length===1?"":"s"}</div></div>
-    ${you}${games.map((g,k)=>gameHtml(g, bd(k))).join("")}${car}
-    ${!bd(0) && games.length ? `<p style="color:#777;font-size:12px">Turn-by-turn breakdowns were left out to keep this email under the size limit.</p>` : ""}</div>`;
-  let html = build(()=>true);
-  if(html.length > 45000){ const keep = games.map(()=>true); for(let k=0;k<games.length && build(i=>keep[i]).length>45000;k++) keep[k]=false; html = build(i=>keep[i]); }
+  const legsAll = games.map(g=>legsOf(g));
+  const totalLegs = legsAll.reduce((a,L)=>a+L.length,0);
+  const totalDarts = games.reduce((a,g)=>a+g.players.reduce((b,p)=>b+(p.raw.darts||(p.raw.x01&&p.raw.x01.darts)||(p.raw.cr&&p.raw.cr.darts)||0),0),0);
+
+  /* aggregate per player */
+  const agg = {}; names.forEach(n=>agg[n] = { wins:0, games:0, legs:0, pts:0, d01:0, marks:0, dcr:0 });
+  games.forEach(g=>g.players.forEach(p=>{ const a = agg[p.name]; a.games++; if(p.raw.won) a.wins++;
+    if(p.raw.x01){ a.pts += p.raw.x01.pts; a.d01 += p.raw.x01.darts; a.legs += p.raw.x01.legsWon; }
+    if(p.raw.cr){ a.marks += p.raw.cr.marks; a.dcr += p.raw.cr.darts; a.legs += p.raw.cr.legsWon; } }));
+  const tot = Object.values(agg).reduce((t,a)=>{ ["pts","d01","marks","dcr","legs"].forEach(k=>t[k]+=a[k]); return t; }, {pts:0,d01:0,marks:0,dcr:0,legs:0});
+  const avg = (p,d) => d ? r2(p/d*3).toFixed(2) : "–";
+
+  let h = `<div style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:700px">`;
+  h += `<div style="text-align:center;font-size:26px;font-weight:bold;margin:4px 0 10px">Match Report</div>`;
+  h += `<table style="font-size:14px;width:100%;margin-bottom:8px"><tr>
+    <td><b>Date:</b> ${H(new Date(start).toLocaleDateString(undefined,{weekday:"short", day:"numeric", month:"short", year:"numeric"}))}<br><b>Start:</b> ${fmtTime(start)}<br><b>End:</b> ${fmtTime(end)}</td>
+    <td><b>Length:</b> ${fmtDur(end-start)}<br><b>Players:</b> ${names.length}</td>
+    <td><b>Games:</b> ${games.length}<br><b>Legs:</b> ${totalLegs}<br><b>Darts:</b> ${totalDarts}</td></tr></table>`;
+  if(forPid){
+    const mine = games.map(g=>g.players.find(p=>p.pid===forPid)).filter(Boolean);
+    if(mine.length) h += `<div style="background:#eef2f7;border-left:4px solid ${NAVY};padding:8px 10px;margin:6px 0">Your night: <b>${mine.length}</b> game${mine.length===1?"":"s"}, <b>${mine.filter(p=>p.raw.won).length}</b> won.</div>`;
+  }
+
+  /* summary */
+  h += SEC("Summary");
+  h += TBL(`<tr>${TH("Player","text-align:left")}${TH("Wins")}${TH("Legs")}${TH("'01 Points")}${TH("Darts")}${TH("3DA")}${TH("Marks")}${TH("Darts")}${TH("MPR")}</tr>`
+    + names.map((n,k)=>{ const a = agg[n]; return `<tr bgcolor="${k%2?"#f3f5f8":"#fff"}">${TD(H(n),"font-weight:bold")}${TD(a.wins,"text-align:center")}${TD(a.legs,"text-align:center")}${TD(a.pts||"–","text-align:right")}${TD(a.d01||"–","text-align:right")}${TD(avg(a.pts,a.d01),"text-align:right")}${TD(a.marks||"–","text-align:right")}${TD(a.dcr||"–","text-align:right")}${TD(avg(a.marks,a.dcr),"text-align:right")}</tr>`; }).join("")
+    + `<tr style="border-top:2px solid ${NAVY}">${TD("All games","font-size:12px")}${TD(games.length,"text-align:center")}${TD(totalLegs,"text-align:center")}${TD(tot.pts||"–","text-align:right")}${TD(tot.d01||"–","text-align:right")}${TD(avg(tot.pts,tot.d01),"text-align:right")}${TD(tot.marks||"–","text-align:right")}${TD(tot.dcr||"–","text-align:right")}${TD(avg(tot.marks,tot.dcr),"text-align:right")}</tr>`);
+
+  /* leg-by-leg grid */
+  let grid = "";
+  games.forEach((g,gi)=>{
+    const L = legsAll[gi], pn = g.players.map(p=>p.name);
+    if(!is01(g.game) && !isCricket(g.game)){
+      grid += `<tr bgcolor="#fff" style="border-top:2px solid #ccd">${TD(`<b>${gi+1}</b>`)}${TD(H(gameType(g)))}${TD(g.players.map(p=>`${p.raw.won?"★ ":""}${H(p.name)}: ${H(p.rows[0][1])}`).join(" &nbsp;·&nbsp; "),"")}</tr>`;
+      return;
+    }
+    L.forEach((leg,li)=>{
+      const cells = pn.map((n,i)=>{ const st = legPlayerStats(g, leg, i);
+        const mark = (leg.starter===i ? `<span style="color:${RED}">♦</span>` : "") + (leg.winner===i ? `<span style="color:${RED}">★</span>` : "");
+        return `${mark} ${H(n)} <b style="color:${leg.winner===i?RED:"#111"}">${st.score}</b> <span style="color:#666">(${(st.avg||0).toFixed(2)}, ${st.darts}d)</span>`; }).join(" &nbsp;|&nbsp; ");
+      grid += `<tr bgcolor="${li%2?"#f3f5f8":"#fff"}" ${li===0?'style="border-top:2px solid #ccd"':""}>${TD(`<b>${gi+1}.${g.opts && g.opts.sets>1 ? leg.s+"."+leg.l : leg.l}</b>`)}${TD(H(gameType(g)))}${TD(cells)}</tr>`;
+    });
+  });
+  h += SEC("Leg by leg");
+  h += `<div style="font-size:12px;color:#555">♦ threw first · ★ won the leg · numbers are score left (cricket: points), then 3-dart average or MPR and darts thrown</div>`;
+  h += TBL(`<tr>${TH("Leg","text-align:left")}${TH("Game","text-align:left")}${TH("Result","text-align:left")}</tr>${grid}`);
+
+  /* game detail */
+  let detail = "";
+  const detailFor = (g, gi) => {
+    let out = "";
+    const pn = g.players.map(p=>p.name), L = legsAll[gi];
+    if(!L.length) return "";
+    L.forEach(leg=>{
+      const per = pn.map((_,i)=>leg.turns.filter(e=>e.p===i));
+      const rounds = Math.max(...per.map(a=>a.length));
+      const label = oneGame(g.game) ? `Game ${gi+1} · ${H(g.title)}` : `Game ${gi+1}.${g.opts && g.opts.sets>1 ? leg.s+"."+leg.l : leg.l} · ${H(g.title)}`;
+      const sts = pn.map((_,i)=>legPlayerStats(g, leg, i));
+      let rows = "";
+      if(is01(g.game)) rows += `<tr bgcolor="#eef2f7">${TD("","color:#888")}${pn.map(()=>TD("")+TD(g.game,"text-align:right;font-weight:bold")).join("")}</tr>`;
+      for(let r=0;r<rounds;r++){
+        rows += `<tr bgcolor="${r%2?"#f6f7f9":"#fff"}">${TD(r+1,"color:#888;text-align:center")}${per.map(a=>{ const e = a[r];
+          if(!e) return TD("")+TD("");
+          if(e.k==="01"){
+            const turn = e.bust ? `<span style="color:${RED}">Bust</span>` : e.v;
+            const style = e.co ? `color:#fff;background:${RED};font-weight:bold;text-align:right` : e.v>=100 && !e.bust ? "text-align:right;font-weight:bold" : "text-align:right";
+            return TD(turn + (e.co ? ` <span style="font-size:11px">DO(${e.darts})</span>` : ""), "text-align:right") + TD(e.left, style);
+          }
+          if(e.k==="cr") return TD(H(crHit(e.d)) + (e.marks>=5 ? ` <b style="color:${RED}">${e.marks}M</b>` : ""), "font-size:12px") + TD(e.pts ? e.pts[e.p] : "", "text-align:right");
+          if(e.k==="ki") return TD(H(e.d.join(" ")), "font-size:12px") + TD("");
+          if(e.k==="hv") return TD(e.halved ? `<span style="color:${RED}">½</span>` : "+"+e.score, "text-align:right") + TD(e.total, "text-align:right;font-weight:bold");
+          return TD(H(e.tag), "font-size:12px") + TD(e.total!==undefined ? e.total : "", "text-align:right;font-weight:bold");
+        }).join("")}</tr>`;
+      }
+      const outs = leg.E.filter(e=>e.k==="out").map(e=>`${H(pn[e.p])} out${e.why?` (${H(e.why)})`:""}`);
+      const foot = (is01(g.game) || isCricket(g.game)) ? `<tr bgcolor="#eef2f7">${TD(is01(g.game)?"3DA":"MPR","font-size:11px;color:#555")}${sts.map(st=>TD(`${st.darts} darts`,"font-size:12px;color:#555")+TD((st.avg||0).toFixed(2),"text-align:right;font-weight:bold")).join("")}</tr>` : "";
+      out += `<div style="background:#3d4651;color:#fff;padding:6px 8px;margin-top:12px;font-weight:bold">${label}${leg.winner!==null?` <span style="float:right">★ ${H(pn[leg.winner])}</span>`:""}</div>`;
+      out += TBL(`<tr>${TH("Rnd")}${pn.map((n,i)=>TH(`${leg.starter===i?"♦ ":""}${H(n)}`,"text-align:left")+TH(is01(g.game)?"Left":isCricket(g.game)?"Pts":g.game==="halveit"?"Total":"", "text-align:right")).join("")}</tr>${rows}${foot}`);
+      if(outs.length) out += `<div style="font-size:12px;color:${RED};margin:-8px 0 8px">${outs.join(" · ")}</div>`;
+    });
+    return out;
+  };
+
+  /* performance + counts */
+  const turns01 = games.filter(g=>is01(g.game)).flatMap(g=>(g.tlog||[]).filter(e=>e.k==="01").map(e=>Object.assign({ name:g.players[e.p].name, gid:g.id }, e)));
+  const turnsCr = games.filter(g=>isCricket(g.game)).flatMap(g=>(g.tlog||[]).filter(e=>e.k==="cr").map(e=>Object.assign({ name:g.players[e.p].name }, e)));
+  const leader = (arr, f) => { if(!arr.length) return null; const best = Math.max(...arr.map(f)); if(!(best>0)) return null; const who = arr.filter(e=>f(e)===best).map(e=>e.name);
+    const c = {}; who.forEach(w=>c[w]=(c[w]||0)+1); return `${best} &nbsp; ${Object.keys(c).map(w=>`${H(w)}${c[w]>1?` ×${c[w]}`:""}`).join(", ")}`; };
+  let perf = "";
+  const lead = [];
+  if(turns01.length){
+    const ht = leader(turns01.filter(e=>!e.bust), e=>e.v), hdo = leader(turns01.filter(e=>e.co), e=>e.v);
+    if(ht) lead.push(["'01 high turn", ht]); if(hdo) lead.push(["'01 high checkout", hdo]);
+  }
+  if(turnsCr.length){
+    const hm = leader(turnsCr, e=>e.marks); if(hm) lead.push(["Cricket high turn (marks)", hm]);
+  }
+  if(lead.length) perf += TBL(`<tr>${TH("Leaders","text-align:left")}${TH("","text-align:left")}</tr>` + lead.map((r,k)=>`<tr bgcolor="${k%2?"#f3f5f8":"#fff"}">${TD(r[0])}${TD(r[1])}</tr>`).join(""));
+  perf += TBL(`<tr>${TH("Game","text-align:left")}${TH("Player","text-align:left")}${TH("Place")}${TH("Key stats","text-align:left")}</tr>` + games.map((g,gi)=>g.players.map((p,k)=>
+    `<tr bgcolor="${gi%2?"#f3f5f8":"#fff"}" ${k===0?'style="border-top:2px solid #ccd"':""}>${TD(k===0?`<b>${gi+1}</b> ${H(gameType(g))}`:"")}${TD(`${p.raw.won?"★ ":""}${H(p.name)}`)}${TD(p.place,"text-align:center")}${TD(p.rows.slice(0,4).map(r=>`${H(r[0])}: <b>${H(r[1])}</b>`).join(" · "),"font-size:12px")}</tr>`).join("")).join(""));
+
+  let counts = "";
+  if(turns01.length){
+    const pl = [...new Set(turns01.map(e=>e.name))];
+    counts += `<div style="font-weight:bold;margin-top:10px">Checkout performance</div>`;
+    counts += TBL(`<tr>${TH("Player","text-align:left")}${TH("First 9")}${TH("Avg finish")}${TH("Checkouts")}${TH("Darts at double")}${TH("CO%")}</tr>` + pl.map((n,k)=>{
+      const t = turns01.filter(e=>e.name===n), cos = t.filter(e=>e.co), dd = t.reduce((a,e)=>a+(e.dd||0),0);
+      const byLeg = {}; t.forEach(e=>{ const key = e.s+"-"+e.l+"-"+(e.gid||""); (byLeg[key]=byLeg[key]||[]).push(e); });
+      let fp=0, fd=0; Object.values(byLeg).forEach(a=>a.slice(0,3).forEach(e=>{ fp+=e.bust?0:e.v; fd+=e.co?e.darts:3; }));
+      return `<tr bgcolor="${k%2?"#f3f5f8":"#fff"}">${TD(H(n))}${TD(fd?(fp/fd*3).toFixed(2):"–","text-align:center")}${TD(cos.length?(cos.reduce((a,e)=>a+e.v,0)/cos.length).toFixed(1):"–","text-align:center")}${TD(cos.length,"text-align:center")}${TD(dd||"–","text-align:center")}${TD(dd?Math.round(cos.length/dd*100)+"%":"–","text-align:center")}</tr>`; }).join(""));
+    const B = [[100,119],[120,139],[140,159],[160,179],[180,180]];
+    counts += `<div style="font-weight:bold;margin-top:10px">'01 100+ turns</div>`;
+    counts += TBL(`<tr>${TH("Player","text-align:left")}${TH("Count")}${TH("High")}${B.map(b=>TH(b[0]===180?"180":`${b[0]}-${b[1]}`)).join("")}</tr>` + pl.map((n,k)=>{
+      const t = turns01.filter(e=>e.name===n && !e.bust && e.v>=100);
+      return `<tr bgcolor="${k%2?"#f3f5f8":"#fff"}">${TD(H(n))}${TD(t.length,"text-align:center")}${TD(t.length?Math.max(...t.map(e=>e.v)):"–","text-align:center")}${B.map(b=>TD(t.filter(e=>e.v>=b[0]&&e.v<=b[1]).length||"–","text-align:center")).join("")}</tr>`; }).join(""));
+  }
+  if(turnsCr.length){
+    const pl = [...new Set(turnsCr.map(e=>e.name))];
+    counts += `<div style="font-weight:bold;margin-top:10px">Cricket 5M+ turns</div>`;
+    counts += TBL(`<tr>${TH("Player","text-align:left")}${TH("Count")}${TH("5M+ %")}${[5,6,7,8,9].map(m=>TH(m+"M")).join("")}</tr>` + pl.map((n,k)=>{
+      const t = turnsCr.filter(e=>e.name===n), hi = t.filter(e=>e.marks>=5);
+      return `<tr bgcolor="${k%2?"#f3f5f8":"#fff"}">${TD(H(n))}${TD(hi.length,"text-align:center")}${TD(t.length?Math.round(hi.length/t.length*100)+"%":"–","text-align:center")}${[5,6,7,8,9].map(m=>TD(t.filter(e=>e.marks===m).length||"–","text-align:center")).join("")}</tr>`; }).join(""));
+    counts += `<div style="font-weight:bold;margin-top:10px">Bulls &amp; marksman counts</div>`;
+    counts += TBL(`<tr>${TH("Player","text-align:left")}${TH("All bulls")}${TH("Double bulls")}${TH("Triples")}${TH("Hat tricks")}</tr>` + pl.map((n,k)=>{
+      const t = turnsCr.filter(e=>e.name===n), ds = t.flatMap(e=>e.d.map(parseDart));
+      const bulls = ds.filter(x=>x.n===25).reduce((a,x)=>a+x.m,0), dbs = ds.filter(x=>x.n===25&&x.m===2).length, tr = ds.filter(x=>x.m===3).length;
+      const hats = t.filter(e=>e.d.length===3 && e.d.every(l=>parseDart(l).n===25)).length;
+      return `<tr bgcolor="${k%2?"#f3f5f8":"#fff"}">${TD(H(n))}${TD(bulls||"–","text-align:center")}${TD(dbs||"–","text-align:center")}${TD(tr||"–","text-align:center")}${TD(hats||"–","text-align:center")}</tr>`; }).join(""));
+  }
+
+  const car = career ? SEC("Your career totals") + TBL(careerRows(career).map((r,k)=>`<tr bgcolor="${k%2?"#f3f5f8":"#fff"}">${TD(H(r[0]))}${TD(H(r[1]),"text-align:right;font-weight:bold")}</tr>`).join("")) : "";
+  const build = keep => {
+    let d = ""; games.forEach((g,gi)=>{ if(keep[gi]) d += detailFor(g,gi); });
+    const dropped = keep.some(k=>!k);
+    return h + SEC("Player performance") + perf + (counts ? SEC("Match counts") + counts : "")
+      + SEC("Game detail") + (d || "") + (dropped ? `<p style="color:#777;font-size:12px">Some turn-by-turn tables were left out to keep this email under the size limit.</p>` : "")
+      + car + `</div>`;
+  };
+  const keep = games.map(()=>true);
+  let html = build(keep);
+  for(let k=0; k<games.length && html.length>47000; k++){ keep[k] = false; html = build(keep); }
   return html;
 }
+
 async function sendEmail(to, subject, html){
   const r = await fetch("https://api.emailjs.com/api/v1.0/email/send", { method:"POST", headers:{ "Content-Type":"application/json" },
     body: JSON.stringify({ service_id:EMAILJS.serviceId, template_id:EMAILJS.templateId, user_id:EMAILJS.publicKey, template_params:{ to_email:to, subject, report_html:html } }) });
@@ -952,7 +1108,7 @@ function throwDart(n, m){
     if(closed && (!match.opts.points || L.p.every((o,i)=>i===idx || (match.opts.cutthroat ? p.points<=o.points : p.points>=o.points)))) win = true;
   }
   match.turn.push({n, m, counted});
-  if(win){ p.turns++; p.last = cricketSummary(); tl({ k:"cr", p:idx, marks:match.turnMarks, d:p.last.darts }); endLeg(idx, { darts:p.darts }); }
+  if(win){ p.turns++; p.last = cricketSummary(); tl({ k:"cr", p:idx, marks:match.turnMarks, d:p.last.darts, pts:L.p.map(q=>q.points) }); endLeg(idx, { darts:p.darts }); }
   else if(match.turn.length>=3) endCricketTurn();
   save(); render();
 }
@@ -1143,7 +1299,7 @@ function cricketSummary(){ return { darts: match.turn.map(d=>dartLabel(d.n,d.m))
 function endCricketTurn(){
   const p = match.leg.p[match.cur];
   p.turns++; p.last = cricketSummary();
-  tl({ k:"cr", p:match.cur, marks:match.turnMarks, d:p.last.darts });
+  tl({ k:"cr", p:match.cur, marks:match.turnMarks, d:p.last.darts, pts:match.leg.p.map(q=>q.points) });
   if(match.turnMarks>=5) toast(match.turnMarks+" marks!");
   match.turn = []; match.turnMarks = 0; nextPlayer();
 }
