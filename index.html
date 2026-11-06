@@ -26,6 +26,7 @@
   color-scheme:dark;
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--chalk);font-family:var(--body);font-size:16px;-webkit-tap-highlight-color:transparent;
   padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
@@ -182,6 +183,14 @@ h1 .ring{width:26px;height:26px;border-radius:50%;background:radial-gradient(cir
 .claim.on{background:var(--red);border-color:var(--red);color:#fff}
 .claim .cs{font-size:13px;opacity:.85;font-weight:500}
 
+.pblock{display:flex;flex-direction:column;gap:4px}
+.pblock .em{background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--chalk);padding:9px 12px;font:inherit;font-size:15px}
+.jform{display:flex;flex-direction:column;gap:6px}
+.jform input{background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--chalk);padding:11px 12px;font:inherit;font-size:16px}
+.sheet.wide{max-width:680px;max-height:88vh;overflow-y:auto}
+.mailview{background:#fff;color:#111;border-radius:8px;padding:12px;overflow-x:auto}
+.statlist{display:flex;flex-wrap:wrap;gap:8px}
+
 /* bar + entry + keypad */
 .bar{display:grid;grid-template-columns:44px 1fr auto 44px;align-items:center;gap:8px;margin:0 6px;padding:6px 8px;border-radius:10px 10px 0 0;background:linear-gradient(#c8102e,#8e0b1f)}
 .bar .ib{width:36px;height:34px;border-radius:6px;display:grid;place-items:center;font-size:20px;font-weight:700;background:rgba(0,0,0,.25);color:#fff}
@@ -250,11 +259,11 @@ const catOf = g => (CATS.find(c=>c[2].includes(g)) || CATS[0])[0];
 const KEY = "dartsScorer.v2";
 const app = document.getElementById("app");
 
-let settings = { game:"501", inMode:"straight", outMode:"double", points:true, lives:3, shRounds:7, cuRounds:8, sets:1, legs:3, players:["Home","Away"] };
+let settings = { game:"501", inMode:"straight", outMode:"double", points:true, lives:3, shRounds:7, cuRounds:8, sets:1, legs:3, emails:[], players:["Home","Away"] };
 let match = null, hist = [], screen = "setup", dialog = null, entry = "", pending = null, mod = 1;
 
 /* ---------- storage ---------- */
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify({settings, match, hist:hist.slice(-200)})); }catch(e){} if(online && screen==="game") pushState(); }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({settings, match, hist:hist.slice(-60)})); }catch(e){} recordIfOver(); if(online && screen==="game") pushState(); }
 function load(){
   try{
     const d = JSON.parse(localStorage.getItem(KEY) || "null");
@@ -305,7 +314,7 @@ function pushState(){
     rev: online.rev, by: deviceId, updated: firebase.database.ServerValue.TIMESTAMP
   }).catch(()=>msg("Couldn't send that. Check your connection and try again."));
 }
-function stopListening(){ if(gameRef){ gameRef.child("state").off(); gameRef.child("claims").off(); gameRef = null; } }
+function stopListening(){ if(gameRef){ gameRef.child("state").off(); gameRef.child("claims").off(); gameRef.child("session/ended").off(); gameRef = null; } }
 function listen(){
   stopListening();
   gameRef = fb.ref(`games/${online.code}`);
@@ -318,6 +327,8 @@ function listen(){
     if(screen==="game") render();
   });
   gameRef.child("claims").on("value", snap=>{ remoteClaims = snap.val() || {}; if(screen==="game") render(); });
+  const code = online.code;
+  gameRef.child("session/ended").on("value", snap=>{ if(snap.val() && online && online.code===code) onlineSessionEnded(code); });
 }
 function goOffline(){ stopListening(); online = null; remoteClaims = {}; saveOnline(); }
 async function hostOnline(){
@@ -328,8 +339,10 @@ async function hostOnline(){
   try{
     for(let k=0;k<6;k++){ const s = await fb.ref(`games/${code}/state`).get(); if(!s.exists()) break; code = newCode(); }
   }catch(e){ msg("Couldn't reach the online service. Check your connection."); return; }
-  online = { code, rev:0 };
+  online = { code, rev:0, host:true };
+  await preparePids();
   startMatch();            // builds the match and pushes it
+  fb.ref(`games/${code}/session/host`).set(deviceId);
   remoteClaims = { 0: deviceId };
   await fb.ref(`games/${code}/claims/0`).set(deviceId);
   listen(); saveOnline(); dialog = "share"; render();
@@ -342,7 +355,8 @@ async function lookupGame(raw){
   try{ const snap = await fb.ref(`games/${code}`).get(); d = snap.val(); }catch(e){ msg("Couldn't reach the online service. Check your connection."); return; }
   if(!d || !d.state){ msg(`No game found with code ${code}`); return; }
   const m = JSON.parse(d.state.match);
-  joinState = { code, players: m.players.map(p=>p.name), claims: d.claims || {}, pick: [], state: d.state };
+  if(d.session && d.session.ended){ msg("That game's session has already ended"); return; }
+  joinState = { code, players: m.players.map(p=>p.name), claims: d.claims || {}, pick: [], info: {}, state: d.state };
   dialog = "join"; render();
 }
 async function confirmJoin(){
@@ -351,8 +365,16 @@ async function confirmJoin(){
   online = { code:j.code, rev:j.state.rev||0 };
   match = JSON.parse(j.state.match); hist = JSON.parse(j.state.hist || "[]");
   remoteClaims = Object.assign({}, j.claims);
-  for(const i of j.pick){ remoteClaims[i] = deviceId; await fb.ref(`games/${j.code}/claims/${i}`).set(deviceId); }
-  listen(); saveOnline(); joinState = null; dialog = null; screen = "game"; entry = ""; render();
+  for(const i of j.pick){
+    const info = j.info[i] || {}, name = (info.name || j.players[i]).trim() || j.players[i];
+    if(info.email && !validEmail(info.email)){ msg(`Check the email for ${name}`); online = null; return; }
+    const pid = await linkProfile(name, info.email);
+    match.players[i].name = name; match.players[i].pid = pid;
+    remoteClaims[i] = deviceId; await fb.ref(`games/${j.code}/claims/${i}`).set(deviceId);
+  }
+  listen(); saveOnline(); joinState = null; dialog = null; screen = "game"; entry = "";
+  if(j.pick.length) save();
+  render();
 }
 async function rejoinOnline(){
   const s = savedOnline(); if(!s) return;
@@ -360,7 +382,8 @@ async function rejoinOnline(){
   try{
     const snap = await fb.ref(`games/${s.code}`).get(), d = snap.val();
     if(!d || !d.state){ msg("That online game has ended."); goOffline(); render(); return; }
-    online = { code:s.code, rev:d.state.rev||0 };
+    if(d.session && d.session.ended){ onlineSessionEnded(s.code); return; }
+    online = { code:s.code, rev:d.state.rev||0, host: d.session && d.session.host===deviceId };
     match = JSON.parse(d.state.match); hist = JSON.parse(d.state.hist || "[]"); remoteClaims = d.claims || {};
   }catch(e){ msg("Couldn't reach the online service. Check your connection."); return; }
   listen(); screen = "game"; render();
@@ -386,6 +409,12 @@ function onlineOverlay(){
     return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="jh">
       <h2 id="jh">Join game ${esc(j.code)}</h2><div class="hint">Tap the player or players throwing on this phone. You can also join just to watch.</div>
       <div class="claims">${claimRows(j.players, j.claims, j.pick)}</div>
+      ${j.pick.map(i=>{ const info = j.info[i] || {}; const prof = profileByName(info.name || j.players[i]);
+        if(!info.email && prof){ info.email = prof.email; j.info[i] = Object.assign({ name: j.players[i] }, info); }
+        return `<div class="jform"><div class="label">Player ${i+1}</div>
+        <input data-jn="${i}" value="${esc(info.name || j.players[i])}" maxlength="20" placeholder="Your name" aria-label="Name for player ${i+1}">
+        <input data-je="${i}" type="email" value="${esc(info.email || "")}" placeholder="Email for your results (optional)" aria-label="Email for player ${i+1}" autocomplete="email"></div>`; }).join("")}
+      ${j.pick.length ? `<div class="hint">Your email stays on this phone. It's only used to send you your results and keep your career stats.</div>` : ""}
       <div class="btns"><button type="button" class="primary" data-act="confirmJoin">${j.pick.length ? "Join game" : "Watch game"}</button>
       <button type="button" class="secondary" data-act="closeDlg">Cancel</button></div></div></div>`;
   }
@@ -403,6 +432,318 @@ function onlineOverlay(){
   return "";
 }
 
+/* ---------- players, sessions, stats and emailed results ---------- */
+const EMAILJS = { serviceId:"service_akr7m1u", templateId:"template_1heaox6", publicKey:"Knh8ECtjWb5JNZ_-k" };
+const PROFILES_KEY = "dartsScorer.profiles", SESSION_KEY = "dartsScorer.session";
+let ddAsk = null;           // { li, min, max } darts-at-double question for the last X01 turn
+let summaryHtml = null;     // session summary shown on screen after ending
+let careerView = null;      // { name, career } being shown
+const recordedIds = new Set();
+const profilesOn = () => onlineAvailable();
+function loadProfiles(){ try{ return JSON.parse(localStorage.getItem(PROFILES_KEY) || "{}"); }catch(e){ return {}; } }
+function saveProfiles(p){ try{ localStorage.setItem(PROFILES_KEY, JSON.stringify(p)); }catch(e){} }
+function profileByName(name){ const P = loadProfiles(); const k = Object.keys(P).find(k=>P[k].name.toLowerCase()===String(name).trim().toLowerCase()); return k ? Object.assign({pid:k}, P[k]) : null; }
+async function pidFor(email){
+  const data = new TextEncoder().encode(email.trim().toLowerCase());
+  const buf = await crypto.subtle.digest("SHA-256", data);
+  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e).trim());
+async function linkProfile(name, email){
+  if(!email || !validEmail(email)) return null;
+  const pid = await pidFor(email);
+  const P = loadProfiles(); P[pid] = { name, email: email.trim() }; saveProfiles(P);
+  try{ await fbInit(); fb.ref(`players/${pid}/name`).set(name); }catch(e){}
+  return pid;
+}
+
+/* sessions: local ones live on this phone, online ones live with the game code */
+function loadLocalSession(){ try{ return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); }catch(e){ return null; } }
+function saveLocalSession(s){ try{ if(s) localStorage.setItem(SESSION_KEY, JSON.stringify(s)); else localStorage.removeItem(SESSION_KEY); }catch(e){} }
+function recordIfOver(){
+  if(!profilesOn() || !match) return;
+  const done = match.over && match.over.type==="match";
+  if(done && !recordedIds.has(match.id)){
+    const rec = buildRecord(match);
+    recordedIds.add(match.id);
+    if(online){ fb.ref(`games/${online.code}/session/games/${match.id}`).set(JSON.stringify(rec)); }
+    else { const s = loadLocalSession() || { id: match.id, started: Date.now(), games: [] }; s.games = s.games.filter(g=>g.id!==rec.id).concat([rec]); saveLocalSession(s); }
+  } else if(!done && recordedIds.has(match.id)){
+    recordedIds.delete(match.id);
+    if(online) fb.ref(`games/${online.code}/session/games/${match.id}`).remove();
+    else { const s = loadLocalSession(); if(s){ s.games = s.games.filter(g=>g.id!==match.id); saveLocalSession(s); } }
+  }
+}
+
+/* ---- stats ---- */
+const r1 = n => Math.round(n*10)/10, r2 = n => Math.round(n*100)/100;
+function placeOrder(m){
+  const P = m.leg.p, n = m.players.length, g = m.game, idx = [...Array(n).keys()];
+  if(!oneGame(g)) return idx.slice().sort((a,b)=>(m.players[b].sets-m.players[a].sets) || (m.players[b].legsTotal-m.players[a].legsTotal));
+  if(g==="killer"){
+    const outs = (m.tlog||[]).filter(e=>e.k==="out").map(e=>e.p);
+    return idx.filter(i=>!outs.includes(i)).concat(outs.slice().reverse());
+  }
+  if(g==="atc") return idx.slice().sort((a,b)=>(P[b].pos-P[a].pos) || (P[a].darts-P[b].darts));
+  if(g==="golf") return idx.slice().sort((a,b)=>P[a].total-P[b].total);
+  if(g==="bobs") return idx.slice().sort((a,b)=>((P[a].out?1:0)-(P[b].out?1:0)) || (P[b].turns-P[a].turns) || (P[b].total-P[a].total));
+  return idx.slice().sort((a,b)=>P[b].total-P[a].total);
+}
+function playerStats(m, i){
+  const g = m.game, T = (m.tlog||[]).filter(e=>e.p===i), pl = m.players[i], P = m.leg.p[i];
+  const legsWon = (m.tlog||[]).filter(e=>e.k==="leg" && e.p===i);
+  const raw = { game:g, won:false };
+  const rows = [];
+  if(is01(g)){
+    const t = T.filter(e=>e.k==="01");
+    const darts = t.reduce((a,e)=>a+(e.co?e.darts:3),0), pts = t.reduce((a,e)=>a+(e.bust?0:e.v),0);
+    const byLeg = {}; t.forEach(e=>{ const k=e.s+"-"+e.l; (byLeg[k]=byLeg[k]||[]).push(e); });
+    let f9p=0, f9d=0; Object.values(byLeg).forEach(a=>a.slice(0,3).forEach(e=>{ f9p += e.bust?0:e.v; f9d += e.co?e.darts:3; }));
+    const c180 = t.filter(e=>!e.bust && e.v===180).length, c140 = t.filter(e=>!e.bust && e.v>=140 && e.v<180).length, c100 = t.filter(e=>!e.bust && e.v>=100 && e.v<140).length;
+    const hi = Math.max(0,...t.filter(e=>!e.bust).map(e=>e.v)), cos = t.filter(e=>e.co), hiCo = Math.max(0,...cos.map(e=>e.v));
+    const dd = t.reduce((a,e)=>a+(e.dd||0),0), best = legsWon.length ? Math.min(...legsWon.map(e=>e.darts)) : null;
+    rows.push(["3-dart avg", darts ? r1(pts/darts*3) : 0], ["First 9 avg", f9d ? r1(f9p/f9d*3) : 0], ["Legs won", legsWon.length]);
+    if(m.opts.sets>1) rows.push(["Sets won", pl.sets]);
+    rows.push(["180s", c180], ["140+", c140], ["100+", c100], ["Highest score", hi], ["Highest checkout", hiCo || "–"], ["Best leg", best ? best+" darts" : "–"]);
+    if(m.opts.outMode==="double") rows.push(["Checkout %", dd ? Math.round(cos.length/dd*100)+"% ("+cos.length+"/"+dd+")" : "–"]);
+    rows.push(["Darts thrown", darts]);
+    raw.x01 = { darts, pts, c180, c140, c100, hi, hiCo, best, co:cos.length, dd, legs: new Set((m.tlog||[]).filter(e=>e.k==="leg").map(e=>e.s+"-"+e.l)).size, legsWon:legsWon.length };
+  } else if(isCricket(g)){
+    const t = T.filter(e=>e.k==="cr");
+    const darts = t.reduce((a,e)=>a+e.d.length,0), marks = t.reduce((a,e)=>a+e.marks,0);
+    rows.push(["MPR", darts ? r2(marks/darts*3) : 0], ["Legs won", legsWon.length]);
+    if(m.opts.sets>1) rows.push(["Sets won", pl.sets]);
+    rows.push(["Total marks", marks], ["5+ mark turns", t.filter(e=>e.marks>=5).length], ["Best turn", Math.max(0,...t.map(e=>e.marks))+" marks"], ["Darts thrown", darts]);
+    raw.cr = { darts, marks, legsWon:legsWon.length };
+  } else if(g==="killer"){
+    rows.push(["Lives taken", P.taken], ["Darts thrown", P.darts]);
+    raw.score = P.taken;
+  } else if(g==="halveit"){
+    const t = T.filter(e=>e.k==="hv");
+    rows.push(["Final score", P.total], ["Times halved", t.filter(e=>e.halved).length], ["Best round", Math.max(0,...t.map(e=>e.score))], ["Darts thrown", P.darts]);
+    raw.score = P.total;
+  } else if(g==="atc"){
+    rows.push(["Reached", P.pos>=ATC_T.length ? "Finished" : (ATC_T[P.pos]===25?"Bull":ATC_T[P.pos])], ["Darts thrown", P.darts]);
+    raw.score = P.pos>=ATC_T.length ? P.darts : null; raw.lower = true;
+  } else {
+    const lbl = g==="golf" ? "Strokes" : g==="baseball" ? "Runs" : "Final score";
+    rows.push([lbl, P.out ? `Out (${P.total})` : P.total], ["Darts thrown", P.darts]);
+    raw.score = P.out ? null : P.total; raw.lower = g==="golf";
+  }
+  return { rows, raw };
+}
+function breakdown(m){
+  const T = m.tlog || [], names = m.players.map(p=>p.name), out = [];
+  const keys = []; T.forEach(e=>{ const k = e.s+"-"+e.l; if(!keys.includes(k)) keys.push(k); });
+  keys.forEach(k=>{
+    const [s,l] = k.split("-"), E = T.filter(e=>e.s+"-"+e.l===k);
+    const legEnd = E.find(e=>e.k==="leg");
+    const head = oneGame(m.game) ? "Turn by turn" : `${m.opts.sets>1?`Set ${s}, `:""}Leg ${l}${legEnd?` · won by ${names[legEnd.p]} (${legEnd.darts} darts)`:""}`;
+    const lines = names.map((n,i)=>{
+      const t = E.filter(e=>e.p===i && ["01","cr","ki","hv","rg"].includes(e.k));
+      const v = t.map(e=> e.k==="01" ? (e.bust ? "B" : e.co ? `✓${e.v}` : e.v)
+        : e.k==="cr" ? e.marks
+        : e.k==="ki" ? e.d.join(" ")
+        : e.k==="hv" ? (e.halved ? "½" : "+"+e.score)
+        : e.tag);
+      const sep = (m.game==="killer" || m.game==="atc") ? " | " : " ";
+      const outE = E.find(e=>e.k==="out" && e.p===i);
+      return `${n}: ${v.join(sep) || "–"}${outE ? " (out)" : ""}`;
+    });
+    out.push({ head, lines });
+  });
+  return out;
+}
+function buildRecord(m){
+  const order = placeOrder(m), o = m.over || {};
+  const winners = o.tie ? o.tie : [o.winner];
+  const result = o.tie ? `Tie: ${o.tie.map(i=>m.players[i].name).join(" & ")}`
+    : `${m.players[o.winner].name} won` + (!oneGame(m.game) ? (m.opts.sets>1 ? ` ${m.players.map(p=>p.sets).join("–")} in sets` : ` ${m.players.map(p=>p.legsTotal).join("–")} in legs`) : "");
+  const stats = m.players.map((p,i)=>playerStats(m,i));
+  stats.forEach((st,i)=>{ st.raw.won = winners.includes(i); st.raw.place = order.indexOf(i)+1; });
+  return { id:m.id, game:m.game, title:gameName(m.game, m.opts), date:m.started||Date.now(), result,
+    players: m.players.map((p,i)=>({ name:p.name, pid:p.pid||null, place: order.indexOf(i)+1, rows: stats[i].rows, raw: stats[i].raw })),
+    breakdown: breakdown(m) };
+}
+
+/* ---- career ---- */
+function mergeCareer(c, raws){
+  c = c || {};
+  c.matches = (c.matches||0) + raws.length; c.wins = (c.wins||0) + raws.filter(r=>r.won).length;
+  raws.forEach(r=>{
+    if(r.x01){ const x = c.x01 = c.x01 || {}; const a = r.x01;
+      ["darts","pts","c180","c140","c100","co","dd","legs","legsWon"].forEach(k=>x[k]=(x[k]||0)+(a[k]||0));
+      x.hi = Math.max(x.hi||0, a.hi||0); x.hiCo = Math.max(x.hiCo||0, a.hiCo||0);
+      if(a.best) x.best = x.best ? Math.min(x.best, a.best) : a.best; }
+    if(r.cr){ const x = c.cr = c.cr || {}; ["darts","marks","legsWon"].forEach(k=>x[k]=(x[k]||0)+(r.cr[k]||0)); }
+    const gm = (c.games = c.games || {})[r.game] = (c.games||{})[r.game] || {};
+    gm.played = (gm.played||0)+1; gm.won = (gm.won||0)+(r.won?1:0);
+    if(r.score!==undefined && r.score!==null) gm.best = gm.best===undefined ? r.score : (r.lower ? Math.min(gm.best, r.score) : Math.max(gm.best, r.score));
+  });
+  c.updated = Date.now();
+  return c;
+}
+function careerRows(c){
+  if(!c) return [];
+  const rows = [["Matches played", c.matches||0], ["Matches won", c.wins||0]];
+  if(c.x01 && c.x01.darts){ const x = c.x01;
+    rows.push(["X01 average", r1(x.pts/x.darts*3)], ["X01 legs won", x.legsWon||0], ["180s", x.c180||0], ["140+", x.c140||0], ["100+", x.c100||0], ["Highest score", x.hi||0], ["Highest checkout", x.hiCo||"–"], ["Best leg", x.best ? x.best+" darts" : "–"]);
+    if(x.dd) rows.push(["Checkout %", Math.round(x.co/x.dd*100)+"%"]); }
+  if(c.cr && c.cr.darts) rows.push(["Cricket MPR", r2(c.cr.marks/c.cr.darts*3)], ["Cricket legs won", c.cr.legsWon||0]);
+  Object.keys(c.games||{}).filter(g=>!is01(g) && !isCricket(g)).forEach(g=>{ const x = c.games[g];
+    rows.push([`${NAMES[g]||g}`, `${x.won||0} won of ${x.played||0}${x.best!==undefined ? ` · best ${x.best}` : ""}`]); });
+  return rows;
+}
+async function updateCareer(pid, name, raws){
+  await fbInit();
+  let result = null;
+  await fb.ref(`players/${pid}`).transaction(cur=>{ cur = cur || {}; cur.name = name; cur.career = mergeCareer(cur.career, raws); result = cur.career; return cur; });
+  return result;
+}
+
+/* ---- email report ---- */
+const H = s => esc(s);
+function statsTableHtml(rec){
+  const labels = rec.players[0].rows.map(r=>r[0]);
+  const th = `<tr><th style="text-align:left;padding:4px 8px;border-bottom:2px solid #c8102e"></th>${rec.players.map(p=>`<th style="text-align:right;padding:4px 8px;border-bottom:2px solid #c8102e">${H(p.name)}</th>`).join("")}</tr>`;
+  const trs = labels.map((l,k)=>`<tr><td style="padding:3px 8px;color:#555">${H(l)}</td>${rec.players.map(p=>`<td style="text-align:right;padding:3px 8px">${H(p.rows[k] ? p.rows[k][1] : "")}</td>`).join("")}</tr>`).join("");
+  return `<table style="border-collapse:collapse;font-size:14px;margin:6px 0 10px">${th}${trs}</table>`;
+}
+function gameHtml(rec, withBreakdown){
+  const bd = withBreakdown ? rec.breakdown.map(b=>`<div style="margin:6px 0 2px;font-weight:bold;font-size:13px">${H(b.head)}</div>${b.lines.map(l=>`<div style="font-family:monospace;font-size:12px;color:#333">${H(l)}</div>`).join("")}`).join("") : "";
+  return `<div style="border-top:1px solid #ddd;padding-top:10px;margin-top:14px">
+    <div style="font-size:18px;font-weight:bold">${H(rec.title)}</div>
+    <div style="color:#c8102e;font-weight:bold;margin:2px 0 6px">${H(rec.result)}</div>
+    ${statsTableHtml(rec)}${bd}</div>`;
+}
+function reportHtml(games, forPid, career){
+  const day = new Date(games.length ? games[0].date : Date.now()).toLocaleDateString(undefined,{weekday:"long", month:"long", day:"numeric"});
+  const names = [...new Set(games.flatMap(g=>g.players.map(p=>p.name)))];
+  const mine = forPid ? games.map(g=>g.players.find(p=>p.pid===forPid)).filter(Boolean) : [];
+  const wins = mine.filter(p=>p.raw.won).length;
+  const you = forPid && mine.length ? `<div style="background:#f6f1e7;border-radius:8px;padding:10px 12px;margin:10px 0">
+    <b>Your night:</b> ${mine.length} game${mine.length===1?"":"s"}, ${wins} win${wins===1?"":"s"}.</div>` : "";
+  const car = career ? `<div style="border-top:1px solid #ddd;padding-top:10px;margin-top:14px"><div style="font-size:18px;font-weight:bold">Your career totals</div>
+    <table style="border-collapse:collapse;font-size:14px;margin-top:6px">${careerRows(career).map(r=>`<tr><td style="padding:3px 8px;color:#555">${H(r[0])}</td><td style="padding:3px 8px;text-align:right">${H(r[1])}</td></tr>`).join("")}</table></div>` : "";
+  const build = bd => `<div style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:640px">
+    <div style="background:#c8102e;color:#fff;padding:12px 14px;border-radius:8px"><div style="font-size:22px;font-weight:bold">Darts night results</div>
+    <div>${H(day)} · ${H(names.join(", "))} · ${games.length} game${games.length===1?"":"s"}</div></div>
+    ${you}${games.map((g,k)=>gameHtml(g, bd(k))).join("")}${car}
+    ${!bd(0) && games.length ? `<p style="color:#777;font-size:12px">Turn-by-turn breakdowns were left out to keep this email under the size limit.</p>` : ""}</div>`;
+  let html = build(()=>true);
+  if(html.length > 45000){ const keep = games.map(()=>true); for(let k=0;k<games.length && build(i=>keep[i]).length>45000;k++) keep[k]=false; html = build(i=>keep[i]); }
+  return html;
+}
+async function sendEmail(to, subject, html){
+  const r = await fetch("https://api.emailjs.com/api/v1.0/email/send", { method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ service_id:EMAILJS.serviceId, template_id:EMAILJS.templateId, user_id:EMAILJS.publicKey, template_params:{ to_email:to, subject, report_html:html } }) });
+  if(!r.ok) throw new Error(await r.text());
+}
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+let sending = false;
+/* send reports + update careers for every player whose email lives on this phone */
+async function deliver(games, sentRef){
+  if(sending || !games.length) return { sent:[], failed:[] };
+  sending = true;
+  const P = loadProfiles(), sent = [], failed = [];
+  try{
+    const pids = [...new Set(games.flatMap(g=>g.players.map(p=>p.pid)).filter(pid=>pid && P[pid]))];
+    for(const pid of pids){
+      if(sentRef){ const s = await sentRef.child(pid).get(); if(s.exists()) continue; }
+      const mineRaw = games.map(g=>g.players.find(p=>p.pid===pid)).filter(Boolean).map(p=>p.raw);
+      let career = null;
+      try{ career = await updateCareer(pid, P[pid].name, mineRaw); }catch(e){}
+      if(sentRef) await sentRef.child(pid).set(true);
+      if(EMAILJS){
+        try{ await sendEmail(P[pid].email, `Darts results: ${games.length} game${games.length===1?"":"s"}`, reportHtml(games, pid, career)); sent.push(P[pid].name); }
+        catch(e){ failed.push(P[pid].name); }
+        await sleep(1100);
+      }
+    }
+  } finally { sending = false; }
+  return { sent, failed };
+}
+async function endSession(){
+  dialog = null;
+  if(online){
+    await fb.ref(`games/${online.code}/session/ended`).set(Date.now());
+    return; // every phone reacts to "ended" in watchSession
+  }
+  const s = loadLocalSession(); saveLocalSession(null);
+  const games = s ? s.games : [];
+  summaryHtml = games.length ? reportHtml(games, null, null) : `<p>No finished games in this session yet.</p>`;
+  dialog = "summary"; screen = "setup"; render();
+  if(games.length){
+    msg("Saving stats and sending emails…");
+    const r = await deliver(games, null);
+    msg(r.failed.length ? `Couldn't email ${r.failed.join(", ")}` : r.sent.length ? `Results emailed to ${r.sent.join(", ")}` : EMAILJS ? "No player emails on this phone" : "Stats saved");
+  }
+}
+async function onlineSessionEnded(code){
+  try{
+    const snap = await fb.ref(`games/${code}/session`).get(), s = snap.val() || {};
+    const games = Object.values(s.games||{}).map(g=>JSON.parse(g)).sort((a,b)=>a.date-b.date);
+    summaryHtml = games.length ? reportHtml(games, null, null) : `<p>No finished games in this session.</p>`;
+    stopListening(); online = null; remoteClaims = {};
+    dialog = "summary"; screen = "setup"; render();
+    const r = await deliver(games, fb.ref(`games/${code}/session/sent`));
+    try{ localStorage.removeItem(ONLINE_KEY); }catch(e){}
+    if(r.sent.length || r.failed.length) msg(r.failed.length ? `Couldn't email ${r.failed.join(", ")}` : `Results emailed to ${r.sent.join(", ")}`);
+  }catch(e){ msg("Couldn't finish sending results. Open the app again to retry."); }
+}
+async function showCareer(pid){
+  const P = loadProfiles();
+  try{ await fbInit(); const s = await fb.ref(`players/${pid}/career`).get(); careerView = { name: P[pid] ? P[pid].name : "", career: s.val() }; }
+  catch(e){ msg("Couldn't load stats. Check your connection."); return; }
+  dialog = "career"; render();
+}
+function sessionOverlay(){
+  if(ddAsk && match){
+    const e = match.tlog[ddAsk.li];
+    const opts = []; for(let d=ddAsk.min; d<=ddAsk.max; d++) opts.push(d);
+    return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="dh">
+      <h2 id="dh">Darts thrown at a double?</h2><div class="hint">${H(match.players[e.p].name)} started this turn on ${e.start}. Count the darts aimed at a double, hit or miss.</div>
+      <div class="dchoice" style="grid-template-columns:repeat(${opts.length},1fr)">${opts.map(d=>`<button type="button" data-dd="${d}">${d}</button>`).join("")}</div></div></div>`;
+  }
+  if(dialog==="endConfirm") return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="eh">
+      <h2 id="eh">End the session?</h2><div class="hint">Finished games get added to everyone's career stats, and each player with an email gets their results.${online ? " This ends the online game for everyone." : ""} A game still in progress isn't counted.</div>
+      <div class="btns"><button type="button" class="primary" data-act="endSession">End session &amp; email results</button>
+      <button type="button" class="secondary" data-act="closeDlg">Keep playing</button></div></div></div>`;
+  if(dialog==="summary") return `<div class="ov"><div class="sheet wide" role="dialog" aria-modal="true" aria-label="Session results">
+      <div class="mailview">${summaryHtml||""}</div><button type="button" class="primary" data-act="closeSummary">Done</button></div></div>`;
+  if(dialog==="career" && careerView){
+    const rows = careerRows(careerView.career);
+    return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ch">
+      <h2 id="ch">${H(careerView.name)}'s career</h2>
+      ${rows.length ? `<table class="stats"><tbody>${rows.map(r=>`<tr><td>${H(r[0])}</td><td>${H(r[1])}</td></tr>`).join("")}</tbody></table>` : `<div class="hint">No finished sessions yet. Stats are added when a session ends.</div>`}
+      <button type="button" class="primary" data-act="closeDlg">Close</button></div></div>`;
+  }
+  return "";
+}
+function answerDD(d){
+  if(!ddAsk || !match) return;
+  const e = match.tlog[ddAsk.li]; if(e) e.dd = d;
+  ddAsk = null; recordedIds.delete(match.id); save(); render();
+}
+
+async function preparePids(){
+  if(!profilesOn()){ settings.pids = []; return; }
+  const out = [];
+  for(let i=0;i<settings.players.length;i++){
+    const e = (settings.emails||[])[i], name = settings.players[i].trim() || `Player ${i+1}`;
+    out.push(e && validEmail(e) ? await linkProfile(name, e) : null);
+  }
+  settings.pids = out; save();
+}
+function sessionSetupCards(){
+  if(!profilesOn()) return "";
+  const s = !online ? loadLocalSession() : null, P = loadProfiles(), pids = Object.keys(P);
+  const sess = s && s.games.length ? `<div class="card resume"><strong>Tonight's session: ${s.games.length} game${s.games.length===1?"":"s"} finished</strong>
+    <div class="hint">Keep playing, or end the session to save everyone's stats and email the results.</div>
+    <button type="button" class="secondary" data-act="endConfirm">End session &amp; email results</button></div>` : "";
+  const stats = pids.length ? `<div class="card"><div class="label">Career stats</div><div class="statlist">${pids.map(pid=>`<button type="button" class="secondary" data-career="${pid}">${esc(P[pid].name)}</button>`).join("")}</div></div>` : "";
+  return sess + stats;
+}
 /* ---------- helpers ---------- */
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const firstTo = n => Math.floor(n/2) + 1;
@@ -462,15 +803,18 @@ function newLeg(){
     : { marks:{20:0,19:0,18:0,17:0,16:0,15:0,25:0}, points:0, darts:0, hits:0, turns:0, last:null });
   return { p, log:[], phase: g==="killer" ? "pick" : "play", round:0 };
 }
-function startMatch(){
-  const names = settings.players.map((n,i)=>n.trim() || `Player ${i+1}`);
+function tl(e){ if(!match.tlog) match.tlog = []; e.s = match.setNo; e.l = match.legNo; match.tlog.push(e); return match.tlog.length-1; }
+function startMatch(keep){
+  const names = keep ? keep.map(p=>p.name) : settings.players.map((n,i)=>n.trim() || `Player ${i+1}`);
+  const pids = keep ? keep.map(p=>p.pid||null) : (settings.pids || []).slice(0, names.length);
   match = {
     game: settings.game,
     opts: { inMode:settings.inMode, outMode:settings.outMode, points: settings.game==="cutthroat" ? true : settings.points, lives:settings.lives, shRounds:settings.shRounds, cuRounds:settings.cuRounds,
       cutthroat: settings.game==="cutthroat",
       sets: oneGame(settings.game) ? 1 : settings.sets, legs: oneGame(settings.game) ? 1 : settings.legs },
-    players: names.map(name => ({ name, sets:0, legs:0, legsTotal:0, cDarts:0, cScore:0 })),
-    setNo:1, legNo:1, legStarter:0, cur:0, turn:[], turnMarks:0, over:null
+    players: names.map((name,i) => ({ name, pid: pids[i] || null, sets:0, legs:0, legsTotal:0, cDarts:0, cScore:0 })),
+    setNo:1, legNo:1, legStarter:0, cur:0, turn:[], turnMarks:0, over:null,
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2,6), started: Date.now(), tlog: []
   };
   match.leg = newLeg();
   hist = []; entry = ""; pending = null; screen = "game"; save(); render();
@@ -519,9 +863,9 @@ function killerDart(n, m){
   if(o===idx){
     counted = true;
     if(p.lives===max){
-      p.lives = -1; p.out = true; toast(`${match.players[idx].name} killed themselves!`, true);
+      p.lives = -1; p.out = true; tl({ k:"out", p:idx, why:"hit own number" }); toast(`${match.players[idx].name} killed themselves!`, true);
     } else if(p.lives + m > max){
-      p.lives = -1; p.out = true; toast(`${match.players[idx].name} went over ${max}. Out!`, true);
+      p.lives = -1; p.out = true; tl({ k:"out", p:idx, why:`went over ${max}` }); toast(`${match.players[idx].name} went over ${max}. Out!`, true);
     } else {
       p.lives += m;
       if(p.lives===max) toast("KILLER!");
@@ -529,16 +873,16 @@ function killerDart(n, m){
   } else if(o>=0 && p.lives===max){
     counted = true;
     const q = L.p[o]; q.lives -= m; p.taken += m;
-    if(q.lives<0){ q.out = true; toast(`${match.players[o].name} is out!`, true); }
+    if(q.lives<0){ q.out = true; tl({ k:"out", p:o, by:idx }); toast(`${match.players[o].name} is out!`, true); }
   }
   match.turn.push({ n, m, counted });
   const alive = L.p.map((q,i)=>i).filter(i=>!L.p[i].out);
   if(alive.length===1){
     const w = alive[0];
-    p.turns++; p.last = match.turn.map(d=>dartLabel(d.n,d.m));
+    p.turns++; p.last = match.turn.map(d=>dartLabel(d.n,d.m)); tl({ k:"ki", p:idx, d:p.last });
     endLeg(w, { darts:L.p[w].darts });
   } else if(p.out || match.turn.length>=3){
-    p.turns++; p.last = match.turn.map(d=>dartLabel(d.n,d.m));
+    p.turns++; p.last = match.turn.map(d=>dartLabel(d.n,d.m)); tl({ k:"ki", p:idx, d:p.last });
     match.turn = []; nextPlayer();
   }
   save(); render();
@@ -561,13 +905,17 @@ function submitScore(v){
   }
   snapshot();
   p.darts += 3; p.turns++;
+  let li;
   if(v>rem || (dbl && rem-v===1)){
     L.log.push({ i, v:0, left:rem, bust:true }); toast("Bust", true);
+    li = tl({ k:"01", p:i, v:0, bust:true, start:rem, left:rem });
   } else {
     p.score -= v; if(v>0) p.isIn = true;
     L.log.push({ i, v, left:p.score });
+    li = tl({ k:"01", p:i, v, start:rem, left:p.score });
     if(v===180) toast("180!"); else if(v>=140) toast(v+"!");
   }
+  if(dbl && rem<=50 && checkout(rem,3,true) && profilesOn()) ddAsk = { li, max:3, min:0 };
   nextPlayer(); save(); render();
 }
 function finish(darts){
@@ -576,6 +924,8 @@ function finish(darts){
   const co = p.score;
   p.darts += darts; p.turns++; L.log.push({ i, v:co, left:0 }); p.score = 0; p.isIn = true;
   pending = null;
+  const li = tl({ k:"01", p:i, v:co, start:co, left:0, co:true, darts });
+  if(match.opts.outMode==="double" && profilesOn()) ddAsk = { li, max:darts, min:1 };
   endLeg(i, { checkout:co, darts:p.darts });
   save(); render();
 }
@@ -602,7 +952,7 @@ function throwDart(n, m){
     if(closed && (!match.opts.points || L.p.every((o,i)=>i===idx || (match.opts.cutthroat ? p.points<=o.points : p.points>=o.points)))) win = true;
   }
   match.turn.push({n, m, counted});
-  if(win){ p.turns++; p.last = cricketSummary(); endLeg(idx, { darts:p.darts }); }
+  if(win){ p.turns++; p.last = cricketSummary(); tl({ k:"cr", p:idx, marks:match.turnMarks, d:p.last.darts }); endLeg(idx, { darts:p.darts }); }
   else if(match.turn.length>=3) endCricketTurn();
   save(); render();
 }
@@ -656,6 +1006,7 @@ function endHalveTurn(override){
   const before = p.total;
   if(sc>0) p.total += sc; else { p.total = Math.ceil(p.total/2); toast("Halved!", true); }
   p.hist.push({ score:sc, halved:sc===0, total:p.total, before, choice: t==="CHOICE" ? match.choice : null });
+  tl({ k:"hv", p:i, r:L.round, score:sc, halved:sc===0, total:p.total });
   p.turns++; match.turn = []; match.choice = null;
   nextPlayer();
   if(match.cur===match.legStarter){
@@ -703,7 +1054,7 @@ function rgDart(n, m){
   if(g==="atc"){
     const hit = n>0;
     match.turn.push({ n:hit?t:0, m:1, counted:hit });
-    if(hit){ p.pos++; if(p.pos>=ATC_T.length){ p.turns++; match.turn=[]; finishRG([idx]); save(); render(); return; } }
+    if(hit){ p.pos++; if(p.pos>=ATC_T.length){ p.turns++; tl({ k:"rg", p:idx, tag: match.turn.map(d=>d.counted ? (d.n===25?"B":d.n) : "–").join(" ") }); match.turn=[]; finishRG([idx]); save(); render(); return; } }
   } else if(g==="golf"){
     match.turn.push({ n:m?t:0, m:m||1, counted:m>0, golf:GOLF[m] });
   } else {
@@ -721,6 +1072,7 @@ function rgEndTurn(override){
     const ms = new Set(hits.map(d=>d.m));
     if(ms.has(1) && ms.has(2) && ms.has(3)){
       p.total += sc; p.hist.push({score:sc,total:p.total,tag:"SHANGHAI"}); p.turns++; match.turn=[];
+      tl({ k:"rg", p:idx, r:L.round, score:sc, tag:"SHANGHAI", total:p.total });
       toast("SHANGHAI!"); finishRG([idx], true); return;
     }
   } else if(g==="baseball"){ sc = match.turn.filter(d=>d.n===t).reduce((a,d)=>a+d.m,0); tag = sc ? `+${sc}` : "0"; }
@@ -733,8 +1085,9 @@ function rgEndTurn(override){
   if(g!=="atc"){
     p.total += sc;
     p.hist.push({ score:sc, total:p.total, tag });
-    if(g==="bobs" && p.total<0){ p.out = true; toast(`${match.players[idx].name} is out!`, true); }
-  }
+    tl({ k:"rg", p:idx, r:L.round, score:sc, tag, total:p.total });
+    if(g==="bobs" && p.total<0){ p.out = true; tl({ k:"out", p:idx }); toast(`${match.players[idx].name} is out!`, true); }
+  } else tl({ k:"rg", p:idx, tag: match.turn.map(d=>d.counted ? (d.n===25?"B":d.n) : "–").join(" ") });
   p.turns++; match.turn = [];
   const alive = L.p.filter(q=>!q.out);
   if(!alive.length){ finishRG(); return; }
@@ -790,6 +1143,7 @@ function cricketSummary(){ return { darts: match.turn.map(d=>dartLabel(d.n,d.m))
 function endCricketTurn(){
   const p = match.leg.p[match.cur];
   p.turns++; p.last = cricketSummary();
+  tl({ k:"cr", p:match.cur, marks:match.turnMarks, d:p.last.darts });
   if(match.turnMarks>=5) toast(match.turnMarks+" marks!");
   match.turn = []; match.turnMarks = 0; nextPlayer();
 }
@@ -802,6 +1156,7 @@ function cricketRest(){
 /* legs, sets, match */
 function endLeg(w, info){
   const L = match.leg;
+  tl({ k:"leg", p:w, darts: L.p[w].darts });
   match.players.forEach((pl,i)=>{
     pl.cDarts += L.p[i].darts;
     pl.cScore += is01(match.game) ? (+match.game - L.p[i].score) : match.game==="killer" ? L.p[i].taken : L.p[i].hits;
@@ -958,18 +1313,25 @@ function renderSetup(){
       <button type="button" class="rulesbtn" data-act="rules">How to play ${esc(shortName(s.game))}</button>
     </div>
     ${oneGame(s.game) ? "" : `<div class="card"><div class="label">Format</div>${stepper("sets", s.sets, "set")}${stepper("legs", s.legs, "leg")}</div>`}
-    <div class="card"><div class="label">Players</div>
-      <div class="players">${s.players.map((n,i)=>`<div class="prow">
+    ${sessionSetupCards()}
+    ${online && online.host ? `<div class="card resume"><strong>Online game ${esc(online.code)}: pick the next game</strong>
+      <div class="hint">Same players: ${esc(match.players.map(p=>p.name).join(", "))}. Everyone's phone switches over when you start.</div>
+      <button type="button" class="primary" data-act="startNext">Start next game</button>
+      <button type="button" class="secondary" data-act="backToGame">Back to the game</button></div>` : ""}
+    <div class="card" ${online && online.host ? 'hidden' : ""}><div class="label">Players</div>
+      <div class="players">${s.players.map((n,i)=>`<div class="pblock"><div class="prow">
         <input id="pl-${i}" data-pl="${i}" value="${esc(n)}" maxlength="20" aria-label="Player ${i+1} name" autocomplete="off">
-        ${s.players.length>1 ? `<button type="button" class="x" data-rm="${i}" aria-label="Remove ${esc(n)}">×</button>` : ""}</div>`).join("")}</div>
+        ${s.players.length>1 ? `<button type="button" class="x" data-rm="${i}" aria-label="Remove ${esc(n)}">×</button>` : ""}</div>
+        ${profilesOn() ? `<input class="em" id="em-${i}" data-em="${i}" type="email" value="${esc((s.emails||[])[i]||"")}" placeholder="Email for results (optional)" aria-label="Email for ${esc(n)}" autocomplete="off">` : ""}</div>`).join("")}</div>
+      ${profilesOn() ? `<div class="hint">Emails stay on this phone. Players with an email get their results and career stats when the session ends. Online players add their own when they join.</div>` : ""}
       ${s.players.length<8 ? `<button type="button" class="ghost" data-act="addp">+ Add player</button>` : ""}
       <div class="hint">Throw order follows this list.${oneGame(s.game) ? "" : " The first thrower rotates each leg."}</div>
     </div>
     ${s.game==="killer" && s.players.length<2 ? `<div class="hint">Killer needs at least 2 players.</div>` : ""}
-    <button type="button" class="primary" data-act="start" ${s.game==="killer" && s.players.length<2 ? "disabled" : ""}>${resumable ? "Start new match" : "Start match"}</button>
-    ${onlineAvailable() ? `<button type="button" class="secondary" data-act="host" ${s.game==="killer" && s.players.length<2 ? "disabled" : ""}>Host online match</button>
+    ${online && online.host ? "" : `<button type="button" class="primary" data-act="start" ${s.game==="killer" && s.players.length<2 ? "disabled" : ""}>${resumable ? "Start new match" : "Start match"}</button>`}
+    ${onlineAvailable() && !(online && online.host) ? `<button type="button" class="secondary" data-act="host" ${s.game==="killer" && s.players.length<2 ? "disabled" : ""}>Host online match</button>
     <div class="hint" style="text-align:center">Hosting gives you a code. Friends join from their own phones and enter their own darts.</div>` : ""}
-  </div>${dialog==="rules" ? rulesOverlay(s.game, s) : dialog==="join" ? onlineOverlay() : ""}`;
+  </div>${dialog==="rules" ? rulesOverlay(s.game, s) : dialog==="join" ? onlineOverlay() : sessionOverlay()}`;
 }
 
 /* ---------- render: game ---------- */
@@ -1114,11 +1476,13 @@ function renderCricketDock(){
     <button type="button" class="miss" data-act="crest" ${dis}>${match.turn.length?"END<br>TURN":"MISS"}</button></div></div>`;
 }
 function renderOverlay(){
+  const so = sessionOverlay(); if(so) return so;
   if(dialog==="rules") return rulesOverlay(match.game, match.opts);
   if(dialog==="share") return onlineOverlay();
   if(dialog==="quit") return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="qh">
     <h2 id="qh">Menu</h2><div class="hint">Leaving keeps this match saved on this device, so you can resume it from the start screen.</div>
     <div class="btns"><button type="button" class="secondary" data-act="rules">How to play ${esc(shortName(match.game))}</button>
+    ${profilesOn() && (!online || online.host) ? `<button type="button" class="secondary" data-act="endConfirm">End session &amp; email results</button>` : ""}
     <button type="button" class="primary" data-act="toSetup">Leave match</button>
     <button type="button" class="secondary" data-act="closeDlg">Keep playing</button></div></div></div>`;
   if(pending) return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ph">
@@ -1149,7 +1513,7 @@ function renderOverlay(){
   const stats = o.type==="match" ? `<table class="stats"><thead><tr><th>Player</th>${match.opts.sets>1?"<th>Sets</th>":""}${kil?"":"<th>Legs</th>"}<th>${statLabel}</th></tr></thead><tbody>
     ${match.players.map((pl,i)=>`<tr><td>${esc(pl.name)}</td>${match.opts.sets>1?`<td>${pl.sets}</td>`:""}${kil?"":`<td>${pl.legsTotal}</td>`}<td>${avgText(i)}</td></tr>`).join("")}</tbody></table>` : "";
   const btns = o.type==="match"
-    ? `<button type="button" class="primary" data-act="rematch">Rematch</button><button type="button" class="secondary" data-act="toSetup">New game</button>`
+    ? `<button type="button" class="primary" data-act="rematch">Rematch</button>${online ? (online.host ? `<button type="button" class="secondary" data-act="nextGame">Different game</button>` : "") : `<button type="button" class="secondary" data-act="toSetup">New game</button>`}${profilesOn() && (!online || online.host) ? `<button type="button" class="secondary" data-act="endConfirm">End session &amp; email results</button>` : ""}`
     : `<button type="button" class="primary" data-act="nextLeg">${o.type==="set"?"Start next set":"Next leg"}</button>`;
   return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="oh">
     <h2 id="oh">${title}</h2><div class="bigl">${line}</div><div class="hint">${extra}</div>${stats}
@@ -1390,8 +1754,10 @@ app.addEventListener("click", e=>{
     } else toggleClaim(i);
     return;
   }
+  if(d.dd!==undefined){ answerDD(+d.dd); return; }
+  if(d.career){ showCareer(d.career); return; }
   if(online && screen==="game" && match){
-    const free = ["quit","rules","closeRules","closeDlg","toSetup","share","copyInvite","nextLeg","rematch","undo"];
+    const free = ["quit","rules","closeRules","closeDlg","toSetup","share","copyInvite","nextLeg","rematch","undo","endConfirm","endSession","closeSummary","nextGame"];
     if(d.act==="undo" || (d.act==="back" && !entry)){
       if(match.by!==deviceId){ msg("Only the phone that entered the last score can undo it"); return; }
     } else if(!free.includes(d.act) && !match.over && !isMyTurn()){ msg(`It's ${match.players[match.cur].name}'s turn`); return; }
@@ -1406,7 +1772,7 @@ app.addEventListener("click", e=>{
   if(d.hd!==undefined){ halveDart(+d.hd, d.hmm ? +d.hmm : mod); return; }
   if(d.ch){ pickChoice(+d.ch); return; }
   if(d.step){ settings[d.step] = Math.min(15, Math.max(1, settings[d.step] + +d.d)); save(); render(); return; }
-  if(d.rm){ settings.players.splice(+d.rm,1); save(); render(); return; }
+  if(d.rm){ settings.players.splice(+d.rm,1); (settings.emails||[]).splice(+d.rm,1); save(); render(); return; }
   if(d.digit!==undefined){ if(entry.length<3 && !(entry==="" && d.digit==="0")) entry += d.digit; render(); return; }
   if(d.score!==undefined){ submitScore(+d.score); return; }
   if(d.fin){ finish(+d.fin); return; }
@@ -1414,7 +1780,13 @@ app.addEventListener("click", e=>{
   switch(d.act){
     case "addp": settings.players.push(`Player ${settings.players.length+1}`); save(); render();
       setTimeout(()=>{ const el=document.getElementById(`pl-${settings.players.length-1}`); if(el){ el.focus(); el.select(); } },0); break;
-    case "start": goOffline(); startMatch(); break;
+    case "start": goOffline(); preparePids().then(()=>startMatch()); break;
+    case "startNext": { const keep = match.players.map(p=>({ name:p.name, pid:p.pid })); startMatch(keep); break; }
+    case "backToGame": screen = "game"; render(); break;
+    case "nextGame": dialog = null; screen = "setup"; render(); break;
+    case "endConfirm": dialog = "endConfirm"; render(); break;
+    case "endSession": endSession(); break;
+    case "closeSummary": dialog = null; summaryHtml = null; screen = "setup"; render(); break;
     case "resume": goOffline(); screen = "game"; render(); break;
     case "host": hostOnline(); break;
     case "join": { const el = document.getElementById("joincode"); lookupGame(el ? el.value : ""); break; }
@@ -1447,7 +1819,18 @@ app.addEventListener("click", e=>{
     }
   }
 });
-app.addEventListener("input", e=>{ const i = e.target.dataset.pl; if(i===undefined) return; settings.players[+i] = e.target.value; save(); });
+app.addEventListener("input", e=>{
+  const t = e.target, d = t.dataset;
+  if(d.em!==undefined){ (settings.emails = settings.emails || [])[+d.em] = t.value; save(); return; }
+  if(d.jn!==undefined && joinState){ (joinState.info[+d.jn] = joinState.info[+d.jn] || {}).name = t.value; return; }
+  if(d.je!==undefined && joinState){ (joinState.info[+d.je] = joinState.info[+d.je] || {}).email = t.value; return; }
+  if(d.pl===undefined) return;
+  settings.players[+d.pl] = t.value;
+  const prof = profileByName(t.value), em = document.getElementById(`em-${d.pl}`);
+  settings.emails = settings.emails || [];
+  if(prof && em && !em.value){ em.value = prof.email; settings.emails[+d.pl] = prof.email; }
+  save();
+});
 document.addEventListener("keydown", e=>{
   if(screen!=="game" || !match || dialog || e.target.tagName==="INPUT") return;
   if((e.ctrlKey||e.metaKey) && e.key==="z"){ e.preventDefault(); if(!online || match.by===deviceId) undo(); return; }
@@ -1461,6 +1844,10 @@ document.addEventListener("keydown", e=>{
 
 load();
 render();
+if(profilesOn()){
+  const so = savedOnline();
+  if(so) fbInit().then(()=>fb.ref(`games/${so.code}/session/ended`).get()).then(s=>{ if(s && s.val()) onlineSessionEnded(so.code); }).catch(()=>{});
+}
 })();
 </script>
 </body>
