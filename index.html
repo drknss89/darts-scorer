@@ -191,6 +191,16 @@ h1 .ring{width:26px;height:26px;border-radius:50%;background:radial-gradient(cir
 .mailview{background:#fff;color:#111;border-radius:8px;padding:12px;overflow-x:auto}
 .statlist{display:flex;flex-wrap:wrap;gap:8px}
 
+/* cricket board fills the space between header and scorer, so all 7 targets show without scrolling */
+.board.fit{display:flex;flex-direction:column}
+.board.fit .cg{flex:1 1 auto;min-height:0;width:100%;max-width:560px;margin:0 auto;padding:8px;gap:5px 6px}
+.board.fit .cg > *{min-height:0}
+.board.fit .cnum{height:100%;max-height:64px;font-size:clamp(24px,5.2vh,46px);align-self:center;width:100%}
+.board.fit .cmod{height:72%;max-height:44px;min-height:26px;font-size:clamp(16px,3vh,22px);align-self:center;width:100%}
+.board.fit .mk{height:100%;max-height:56px}
+.board.fit .mk svg{height:min(40px,80%);width:auto}
+.board.fit > .hint{flex:none}
+
 /* bar + entry + keypad */
 .bar{display:grid;grid-template-columns:44px 1fr auto 44px;align-items:center;gap:8px;margin:0 6px;padding:6px 8px;border-radius:10px 10px 0 0;background:linear-gradient(#c8102e,#8e0b1f)}
 .bar .ib{width:36px;height:34px;border-radius:6px;display:grid;place-items:center;font-size:20px;font-weight:700;background:rgba(0,0,0,.25);color:#fff}
@@ -1580,7 +1590,7 @@ function renderCricketBoard(){
     html += right.map(i=>`<div class="mk ${dead}">${MARK[L.p[i].marks[t]]}</div>`).join("");
   }
   const lasts = match.players.map((pl,i)=>{ const l=L.p[i].last; return l ? `${esc(pl.name)}: ${esc(l.darts.join(" "))} (${l.marks} mk)` : ""; }).filter(Boolean);
-  return `<div class="cg" style="grid-template-columns:${cols}">${html}</div>
+  return `<div class="cg" style="grid-template-columns:${cols};grid-template-rows:${n>2?"auto ":""}repeat(7,minmax(34px,1fr))">${html}</div>
     ${lasts.length?`<div class="hint" style="padding:0 12px 10px;text-align:center">${lasts.join(" · ")}</div>`:""}`;
 }
 function renderBar(){
@@ -1883,7 +1893,7 @@ function renderRGDock(){
 function renderGame(){
   const x01 = is01(match.game), kil = match.game==="killer", hv = match.game==="halveit", rg = isRG(match.game);
   app.innerHTML = `<div class="game">${kil ? `<div class="roundline"><span>${L_round()}</span><span class="mode">${modeText()}</span></div>` : renderHeader()}
-    <div class="board" id="board">${x01 ? render01Board() : kil ? renderKillerBoard() : hv ? renderHalveBoard() : rg ? renderRGBoard() : renderCricketBoard()}</div>
+    <div class="board ${isCricket(match.game) ? "fit" : ""}" id="board">${x01 ? render01Board() : kil ? renderKillerBoard() : hv ? renderHalveBoard() : rg ? renderRGBoard() : renderCricketBoard()}</div>
     ${renderBar()}${x01 ? render01Dock() : kil ? renderKillerDock() : hv ? renderHalveDock() : rg ? renderRGDock() : renderCricketDock()}</div>${renderOverlay()}`;
   if(hv || rg){ const c = document.getElementById("hcur"), b = document.getElementById("board"); if(c && b) b.scrollTop = c.offsetTop - b.clientHeight/2 + c.offsetHeight/2; }
   if(x01){ const b = document.getElementById("board"); b.scrollTop = b.scrollHeight; }
