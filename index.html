@@ -201,6 +201,26 @@ h1 .ring{width:26px;height:26px;border-radius:50%;background:radial-gradient(cir
 .board.fit .mk svg{height:min(40px,80%);width:auto}
 .board.fit > .hint{flex:none}
 
+.wrap.narrow{max-width:520px}
+.ghost.small{padding:8px 12px;font-size:14px}
+.chip{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:3px 10px;color:var(--muted)}
+.choice{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:18px;border-radius:12px;background:var(--red);color:#fff}
+.choice b{font-family:var(--display);font-size:28px;font-weight:800;letter-spacing:.03em}
+.choice span{opacity:.9;font-size:15px}
+.choice.alt{background:var(--panel);border:1px solid var(--line)}
+.choice.alt span{color:var(--muted)}
+.aform{display:flex;flex-direction:column;gap:8px}
+.aform label{font-size:14px;font-weight:600;color:var(--muted)}
+.aform input,select.em,.jform select{background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--chalk);padding:12px;font:inherit;font-size:16px;width:100%}
+.amsg{background:var(--red-dark);border:1px solid var(--red);border-radius:8px;padding:10px 12px;font-size:15px}
+.tabs.two{grid-template-columns:1fr 1fr}
+.pcard .pname{font-family:var(--display);font-weight:800;font-size:24px}
+.wrapbtns{flex-wrap:wrap}
+.wrapbtns button{flex:1 1 auto;padding:10px 12px;font-size:16px}
+.danger{color:#ff6b7a !important;border-color:#7a2430 !important}
+.hlist{display:flex;flex-direction:column;gap:6px}
+.hrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
+
 /* bar + entry + keypad */
 .bar{display:grid;grid-template-columns:44px 1fr auto 44px;align-items:center;gap:8px;margin:0 6px;padding:6px 8px;border-radius:10px 10px 0 0;background:linear-gradient(#c8102e,#8e0b1f)}
 .bar .ib{width:36px;height:34px;border-radius:6px;display:grid;place-items:center;font-size:20px;font-weight:700;background:rgba(0,0,0,.25);color:#fff}
@@ -307,6 +327,7 @@ async function fbInit(){
   if(fb) return fb;
   await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js");
   await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js");
+  await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js");
   firebase.initializeApp(FIREBASE_CONFIG);
   fb = firebase.database();
   return fb;
@@ -366,7 +387,7 @@ async function lookupGame(raw){
   if(!d || !d.state){ msg(`No game found with code ${code}`); return; }
   const m = JSON.parse(d.state.match);
   if(d.session && d.session.ended){ msg("That game's session has already ended"); return; }
-  joinState = { code, players: m.players.map(p=>p.name), claims: d.claims || {}, pick: [], info: {}, state: d.state };
+  joinState = { code, players: m.players.map(p=>p.name), claims: d.claims || {}, pick: [], links: {}, state: d.state };
   dialog = "join"; render();
 }
 async function confirmJoin(){
@@ -376,10 +397,8 @@ async function confirmJoin(){
   match = JSON.parse(j.state.match); hist = JSON.parse(j.state.hist || "[]");
   remoteClaims = Object.assign({}, j.claims);
   for(const i of j.pick){
-    const info = j.info[i] || {}, name = (info.name || j.players[i]).trim() || j.players[i];
-    if(info.email && !validEmail(info.email)){ msg(`Check the email for ${name}`); online = null; return; }
-    const pid = await linkProfile(name, info.email);
-    match.players[i].name = name; match.players[i].pid = pid;
+    const key = j.links[i] || null, person = key ? personByKey(key) : null;
+    match.players[i].name = person ? person.name : j.players[i]; match.players[i].pid = key;
     remoteClaims[i] = deviceId; await fb.ref(`games/${j.code}/claims/${i}`).set(deviceId);
   }
   listen(); saveOnline(); joinState = null; dialog = null; screen = "game"; entry = "";
@@ -419,12 +438,9 @@ function onlineOverlay(){
     return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="jh">
       <h2 id="jh">Join game ${esc(j.code)}</h2><div class="hint">Tap the player or players throwing on this phone. You can also join just to watch.</div>
       <div class="claims">${claimRows(j.players, j.claims, j.pick)}</div>
-      ${j.pick.map(i=>{ const info = j.info[i] || {}; const prof = profileByName(info.name || j.players[i]);
-        if(!info.email && prof){ info.email = prof.email; j.info[i] = Object.assign({ name: j.players[i] }, info); }
-        return `<div class="jform"><div class="label">Player ${i+1}</div>
-        <input data-jn="${i}" value="${esc(info.name || j.players[i])}" maxlength="20" placeholder="Your name" aria-label="Name for player ${i+1}">
-        <input data-je="${i}" type="email" value="${esc(info.email || "")}" placeholder="Email for your results (optional)" aria-label="Email for player ${i+1}" autocomplete="email"></div>`; }).join("")}
-      ${j.pick.length ? `<div class="hint">Your email stays on this phone. It's only used to send you your results and keep your career stats.</div>` : ""}
+      ${j.pick.map(i=>`<div class="jform"><label class="label" for="jl-${i}">${esc(j.players[i])} is</label>
+        <select id="jl-${i}" data-jl="${i}">${linkOptions(j.links[i]||"", true)}</select></div>`).join("")}
+      ${j.pick.length ? `<div class="hint">Stats and the results email go to whoever you pick here.</div>` : ""}
       <div class="btns"><button type="button" class="primary" data-act="confirmJoin">${j.pick.length ? "Join game" : "Watch game"}</button>
       <button type="button" class="secondary" data-act="closeDlg">Cancel</button></div></div></div>`;
   }
@@ -450,23 +466,6 @@ let summaryHtml = null;     // session summary shown on screen after ending
 let careerView = null;      // { name, career } being shown
 const recordedIds = new Set();
 const profilesOn = () => onlineAvailable();
-function loadProfiles(){ try{ return JSON.parse(localStorage.getItem(PROFILES_KEY) || "{}"); }catch(e){ return {}; } }
-function saveProfiles(p){ try{ localStorage.setItem(PROFILES_KEY, JSON.stringify(p)); }catch(e){} }
-function profileByName(name){ const P = loadProfiles(); const k = Object.keys(P).find(k=>P[k].name.toLowerCase()===String(name).trim().toLowerCase()); return k ? Object.assign({pid:k}, P[k]) : null; }
-async function pidFor(email){
-  const data = new TextEncoder().encode(email.trim().toLowerCase());
-  const buf = await crypto.subtle.digest("SHA-256", data);
-  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join("");
-}
-const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e).trim());
-async function linkProfile(name, email){
-  if(!email || !validEmail(email)) return null;
-  const pid = await pidFor(email);
-  const P = loadProfiles(); P[pid] = { name, email: email.trim() }; saveProfiles(P);
-  try{ await fbInit(); fb.ref(`players/${pid}/name`).set(name); }catch(e){}
-  return pid;
-}
-
 /* sessions: local ones live on this phone, online ones live with the game code */
 function loadLocalSession(){ try{ return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); }catch(e){ return null; } }
 function saveLocalSession(s){ try{ if(s) localStorage.setItem(SESSION_KEY, JSON.stringify(s)); else localStorage.removeItem(SESSION_KEY); }catch(e){} }
@@ -805,30 +804,6 @@ async function sendEmail(to, subject, html){
     body: JSON.stringify({ service_id:EMAILJS.serviceId, template_id:EMAILJS.templateId, user_id:EMAILJS.publicKey, template_params:{ to_email:to, subject, report_html:html } }) });
   if(!r.ok) throw new Error(await r.text());
 }
-const sleep = ms => new Promise(r=>setTimeout(r,ms));
-let sending = false;
-/* send reports + update careers for every player whose email lives on this phone */
-async function deliver(games, sentRef){
-  if(sending || !games.length) return { sent:[], failed:[] };
-  sending = true;
-  const P = loadProfiles(), sent = [], failed = [];
-  try{
-    const pids = [...new Set(games.flatMap(g=>g.players.map(p=>p.pid)).filter(pid=>pid && P[pid]))];
-    for(const pid of pids){
-      if(sentRef){ const s = await sentRef.child(pid).get(); if(s.exists()) continue; }
-      const mineRaw = games.map(g=>g.players.find(p=>p.pid===pid)).filter(Boolean).map(p=>p.raw);
-      let career = null;
-      try{ career = await updateCareer(pid, P[pid].name, mineRaw); }catch(e){}
-      if(sentRef) await sentRef.child(pid).set(true);
-      if(EMAILJS){
-        try{ await sendEmail(P[pid].email, `Darts results: ${games.length} game${games.length===1?"":"s"}`, reportHtml(games, pid, career)); sent.push(P[pid].name); }
-        catch(e){ failed.push(P[pid].name); }
-        await sleep(1100);
-      }
-    }
-  } finally { sending = false; }
-  return { sent, failed };
-}
 async function endSession(){
   dialog = null;
   if(online){
@@ -838,10 +813,10 @@ async function endSession(){
   const s = loadLocalSession(); saveLocalSession(null);
   const games = s ? s.games : [];
   summaryHtml = games.length ? reportHtml(games, null, null) : `<p>No finished games in this session yet.</p>`;
-  dialog = "summary"; screen = "setup"; render();
+  dialog = "summary"; screen = "home"; render();
   if(games.length){
     msg("Saving stats and sending emails…");
-    const r = await deliver(games, null);
+    const r = await deliver(games, null, s.id);
     msg(r.failed.length ? `Couldn't email ${r.failed.join(", ")}` : r.sent.length ? `Results emailed to ${r.sent.join(", ")}` : EMAILJS ? "No player emails on this phone" : "Stats saved");
   }
 }
@@ -851,19 +826,14 @@ async function onlineSessionEnded(code){
     const games = Object.values(s.games||{}).map(g=>JSON.parse(g)).sort((a,b)=>a.date-b.date);
     summaryHtml = games.length ? reportHtml(games, null, null) : `<p>No finished games in this session.</p>`;
     stopListening(); online = null; remoteClaims = {};
-    dialog = "summary"; screen = "setup"; render();
-    const r = await deliver(games, fb.ref(`games/${code}/session/sent`));
+    dialog = "summary"; screen = "home"; render();
+    const r = await deliver(games, fb.ref(`games/${code}/session/sent`), games.length ? `${code}-${games[0].date}` : code);
     try{ localStorage.removeItem(ONLINE_KEY); }catch(e){}
     if(r.sent.length || r.failed.length) msg(r.failed.length ? `Couldn't email ${r.failed.join(", ")}` : `Results emailed to ${r.sent.join(", ")}`);
   }catch(e){ msg("Couldn't finish sending results. Open the app again to retry."); }
 }
-async function showCareer(pid){
-  const P = loadProfiles();
-  try{ await fbInit(); const s = await fb.ref(`players/${pid}/career`).get(); careerView = { name: P[pid] ? P[pid].name : "", career: s.val() }; }
-  catch(e){ msg("Couldn't load stats. Check your connection."); return; }
-  dialog = "career"; render();
-}
 function sessionOverlay(){
+  const ao = accountOverlay(); if(ao) return ao;
   if(ddAsk && match){
     const e = match.tlog[ddAsk.li];
     const opts = []; for(let d=ddAsk.min; d<=ddAsk.max; d++) opts.push(d);
@@ -878,10 +848,14 @@ function sessionOverlay(){
   if(dialog==="summary") return `<div class="ov"><div class="sheet wide" role="dialog" aria-modal="true" aria-label="Session results">
       <div class="mailview">${summaryHtml||""}</div><button type="button" class="primary" data-act="closeSummary">Done</button></div></div>`;
   if(dialog==="career" && careerView){
-    const rows = careerRows(careerView.career);
-    return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ch">
-      <h2 id="ch">${H(careerView.name)}'s career</h2>
+    const rows = careerRows(careerView.career), h = careerView.history || [];
+    return `<div class="ov"><div class="sheet wide" role="dialog" aria-modal="true" aria-labelledby="ch">
+      <h2 id="ch">${H(careerView.name)}'s stats</h2>
       ${rows.length ? `<table class="stats"><tbody>${rows.map(r=>`<tr><td>${H(r[0])}</td><td>${H(r[1])}</td></tr>`).join("")}</tbody></table>` : `<div class="hint">No finished sessions yet. Stats are added when a session ends.</div>`}
+      ${h.length ? `<div class="label">Sessions</div><div class="hlist">${h.map(x=>`<div class="hrow"><div><b>${H(new Date(x.date).toLocaleDateString(undefined,{weekday:"short", month:"short", day:"numeric", year:"numeric"}))}</b>
+        <div class="hint">${H((x.games||[]).map(g=>`${g.title}${g.won?" (won)":""}`).join(", "))}</div></div>
+        <button type="button" class="ghost small danger" data-delhist="${x.sid}">Remove</button></div>`).join("")}</div>
+        <div class="hint">Removing a session takes its games out of these stats.</div>` : ""}
       <button type="button" class="primary" data-act="closeDlg">Close</button></div></div>`;
   }
   return "";
@@ -892,24 +866,218 @@ function answerDD(d){
   ddAsk = null; recordedIds.delete(match.id); save(); render();
 }
 
-async function preparePids(){
-  if(!profilesOn()){ settings.pids = []; return; }
-  const out = [];
-  for(let i=0;i<settings.players.length;i++){
-    const e = (settings.emails||[])[i], name = settings.players[i].trim() || `Player ${i+1}`;
-    out.push(e && validEmail(e) ? await linkProfile(name, e) : null);
-  }
-  settings.pids = out; save();
+/* ---------- accounts: login, players (me + guests), stats history ---------- */
+let user = null;            // firebase auth user
+let account = null;         // { name, email, guests:{gid:{name,email}} }
+let mode = "local";         // "local" | "online" on the setup screen
+let authTab = "login", authBusy = false, authMsg = "";
+let editing = null;         // { key|null, name, email, forRow } guest/me editor
+let confirmAct = null;      // { text, run } generic confirm dialog
+let accountRef = null;
+const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e).trim());
+const meKey = () => user ? `u:${user.uid}` : null;
+function people(){
+  if(!user || !account) return [];
+  const list = [{ key: meKey(), name: account.name || "Me", email: user.email, me:true }];
+  Object.entries(account.guests || {}).forEach(([gid,g])=>list.push({ key:`g:${user.uid}:${gid}`, gid, name:g.name, email:g.email||"" }));
+  return list;
 }
+const personByKey = k => people().find(p=>p.key===k) || null;
+const ownsKey = k => !!user && (k===meKey() || String(k).startsWith(`g:${user.uid}:`));
+function basePath(k){ const [t,uid,gid] = k.split(":"); return t==="u" ? `users/${uid}` : `users/${uid}/guests/${gid}`; }
+function authError(e){
+  const c = (e && e.code) || "";
+  if(c.includes("invalid-email")) return "That email address doesn't look right.";
+  if(c.includes("user-not-found") || c.includes("wrong-password") || c.includes("invalid-credential") || c.includes("invalid-login")) return "Wrong email or password.";
+  if(c.includes("email-already-in-use")) return "There's already an account with that email. Log in instead.";
+  if(c.includes("weak-password")) return "Use a password with at least 6 characters.";
+  if(c.includes("too-many-requests")) return "Too many tries. Wait a minute and try again.";
+  if(c.includes("network")) return "No connection. Check your internet and try again.";
+  if(c.includes("operation-not-allowed")) return "Email sign-in isn't switched on in Firebase yet.";
+  return "Something went wrong. Try again.";
+}
+async function startAuth(){
+  try{ await fbInit(); }catch(e){ screen = "auth"; authMsg = "Couldn't reach the online service. Check your connection."; render(); return; }
+  firebase.auth().onAuthStateChanged(async u=>{
+    user = u;
+    if(accountRef){ accountRef.off(); accountRef = null; }
+    if(!u){ account = null; screen = "auth"; render(); return; }
+    accountRef = fb.ref(`users/${u.uid}`);
+    accountRef.on("value", snap=>{
+      const v = snap.val() || {};
+      account = { name: v.name || u.displayName || u.email.split("@")[0], guests: v.guests || {} };
+      if(!v.name) accountRef.child("name").set(account.name);
+      if(screen==="loading" || screen==="auth") screen = "home";
+      if(screen!=="game") render();
+    });
+    const so = savedOnline();
+    if(so) fb.ref(`games/${so.code}/session/ended`).get().then(s=>{ if(s && s.val()) onlineSessionEnded(so.code); }).catch(()=>{});
+  });
+}
+async function doAuth(kind){
+  const email = (document.getElementById("au-email")||{}).value || "", pass = (document.getElementById("au-pass")||{}).value || "";
+  const name = ((document.getElementById("au-name")||{}).value || "").trim();
+  if(kind==="forgot"){
+    if(!validEmail(email)){ authMsg = "Type your email above first."; render(); return; }
+    try{ await firebase.auth().sendPasswordResetEmail(email.trim()); authMsg = "Check your email for a link to reset your password."; }
+    catch(e){ authMsg = authError(e); }
+    render(); return;
+  }
+  if(kind==="signup" && !name){ authMsg = "Enter your name."; render(); return; }
+  authBusy = true; authMsg = ""; render();
+  try{
+    if(kind==="signup"){
+      const cred = await firebase.auth().createUserWithEmailAndPassword(email.trim(), pass);
+      await cred.user.updateProfile({ displayName:name });
+      await fb.ref(`users/${cred.user.uid}`).update({ name, created: Date.now() });
+    } else await firebase.auth().signInWithEmailAndPassword(email.trim(), pass);
+  }catch(e){ authMsg = authError(e); }
+  authBusy = false; render();
+}
+async function saveEditing(){
+  const e = editing; if(!e || !user) return;
+  const name = ((document.getElementById("ed-name")||{}).value || "").trim();
+  const email = ((document.getElementById("ed-email")||{}).value || "").trim();
+  if(!name){ msg("Enter a name"); return; }
+  if(email && !validEmail(email)){ msg("That email address doesn't look right"); return; }
+  let key = e.key;
+  try{
+    if(key===meKey()){ await fb.ref(`users/${user.uid}/name`).set(name); user.updateProfile({ displayName:name }).catch(()=>{}); }
+    else if(key){ await fb.ref(basePath(key)).update({ name, email }); }
+    else { const r = fb.ref(`users/${user.uid}/guests`).push(); await r.set({ name, email, created: Date.now() }); key = `g:${user.uid}:${r.key}`; account.guests[r.key] = { name, email }; }
+  }catch(err){ msg("Couldn't save. Check your connection."); return; }
+  if(e.forRow!==undefined && e.forRow!==null){ setLink(e.forRow, key, name); }
+  if(e.forJoin!==undefined && e.forJoin!==null && joinState){ joinState.links[e.forJoin] = key; }
+  editing = null; dialog = joinState ? "join" : null; render();
+}
+function setLink(i, key, name){
+  settings.links = settings.links || [];
+  settings.links.forEach((k,j)=>{ if(key && k===key && j!==i) settings.links[j] = null; });
+  settings.links[i] = key || null;
+  if(key) settings.players[i] = name || (personByKey(key)||{}).name || settings.players[i];
+  save();
+}
+function linkOptions(current, allowNew){
+  return `<option value="">No stats</option>${people().map(p=>`<option value="${p.key}" ${p.key===current?"selected":""}>${p.me ? `Me (${esc(p.name)})` : esc(p.name)}</option>`).join("")}${allowNew ? `<option value="new">+ New guest player…</option>` : ""}`;
+}
+function preparePids(){ settings.pids = profilesOn() ? (settings.links||[]).slice(0, settings.players.length) : []; return Promise.resolve(); }
 function sessionSetupCards(){
-  if(!profilesOn()) return "";
-  const s = !online ? loadLocalSession() : null, P = loadProfiles(), pids = Object.keys(P);
-  const sess = s && s.games.length ? `<div class="card resume"><strong>Tonight's session: ${s.games.length} game${s.games.length===1?"":"s"} finished</strong>
+  if(!profilesOn() || online) return "";
+  const s = loadLocalSession();
+  return s && s.games.length ? `<div class="card resume"><strong>Tonight's session: ${s.games.length} game${s.games.length===1?"":"s"} finished</strong>
     <div class="hint">Keep playing, or end the session to save everyone's stats and email the results.</div>
     <button type="button" class="secondary" data-act="endConfirm">End session &amp; email results</button></div>` : "";
-  const stats = pids.length ? `<div class="card"><div class="label">Career stats</div><div class="statlist">${pids.map(pid=>`<button type="button" class="secondary" data-career="${pid}">${esc(P[pid].name)}</button>`).join("")}</div></div>` : "";
-  return sess + stats;
 }
+async function historyFor(key){
+  const s = await fb.ref(`${basePath(key)}/history`).get();
+  return Object.entries(s.val() || {}).map(([sid,h])=>Object.assign({ sid }, h)).sort((a,b)=>b.date-a.date);
+}
+async function careerFor(key){ const h = await historyFor(key); return mergeCareer(null, h.flatMap(x=>x.raws||[])); }
+async function showCareer(key){
+  const p = personByKey(key);
+  try{ const h = await historyFor(key); careerView = { key, name: p ? p.name : "", career: h.length ? mergeCareer(null, h.flatMap(x=>x.raws||[])) : null, history: h }; }
+  catch(e){ msg("Couldn't load stats. Check your connection."); return; }
+  dialog = "career"; render();
+}
+function askConfirm(text, button, run){ confirmAct = { text, button, run }; dialog = "confirm"; render(); }
+
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+let sending = false;
+/* save stats + send reports for every player this account owns (the account holder and their guests) */
+async function deliver(games, sentRef, sid){
+  if(sending || !games.length || !user) return { sent:[], failed:[] };
+  sending = true;
+  const sent = [], failed = [];
+  try{
+    const keys = [...new Set(games.flatMap(g=>g.players.map(p=>p.pid)).filter(k=>k && ownsKey(k)))];
+    for(const key of keys){
+      const person = personByKey(key); if(!person) continue;
+      const mine = games.map(g=>({ g, p:g.players.find(p=>p.pid===key) })).filter(x=>x.p);
+      await fb.ref(`${basePath(key)}/history/${sid}`).set(JSON.parse(JSON.stringify({ date: games[0].date,
+        games: mine.map(x=>({ title:x.g.title, won:!!x.p.raw.won, place:x.p.place })), raws: mine.map(x=>x.p.raw) })));
+      let career = null; try{ career = await careerFor(key); }catch(e){}
+      const flag = key.replace(/[.#$\[\]\/:]/g,"_");
+      if(sentRef){ const s = await sentRef.child(flag).get(); if(s.exists()) continue; await sentRef.child(flag).set(true); }
+      if(EMAILJS && person.email){
+        try{ await sendEmail(person.email, `Darts results: ${games.length} game${games.length===1?"":"s"}`, reportHtml(games, key, career)); sent.push(person.name); }
+        catch(e){ failed.push(person.name); }
+        await sleep(1100);
+      }
+    }
+  } finally { sending = false; }
+  return { sent, failed };
+}
+
+/* ---- screens ---- */
+function renderAuth(){
+  const su = authTab==="signup";
+  app.innerHTML = `<div class="wrap narrow">
+    <h1><span class="ring" aria-hidden="true"></span>Darts Scorer</h1>
+    <div class="card">
+      <div class="tabs two" role="tablist"><button type="button" role="tab" data-tab="login" aria-selected="${!su}">Log in</button><button type="button" role="tab" data-tab="signup" aria-selected="${su}">Create account</button></div>
+      <form id="authform" class="aform" novalidate>
+        ${su ? `<label for="au-name">Your name</label><input id="au-name" maxlength="20" autocomplete="name" placeholder="How you show on the scoreboard">` : ""}
+        <label for="au-email">Email</label><input id="au-email" type="email" autocomplete="email" inputmode="email">
+        <label for="au-pass">Password</label><input id="au-pass" type="password" autocomplete="${su?"new-password":"current-password"}" placeholder="${su?"At least 6 characters":""}">
+        ${authMsg ? `<div class="amsg" role="alert">${esc(authMsg)}</div>` : ""}
+        <button type="submit" class="primary" ${authBusy?"disabled":""}>${authBusy ? "One moment…" : su ? "Create account" : "Log in"}</button>
+        ${su ? "" : `<button type="button" class="rulesbtn" data-act="forgot">Forgot your password?</button>`}
+      </form>
+    </div>
+    <div class="hint" style="text-align:center">Your stats are saved to your account, so they follow you to any phone.</div>
+  </div>`;
+}
+function renderHome(){
+  const resumable = match && !(match.over && match.over.type==="match") && !online;
+  const so = savedOnline(), s = loadLocalSession();
+  app.innerHTML = `<div class="wrap narrow">
+    <div class="row"><h1><span class="ring" aria-hidden="true"></span>Darts Scorer</h1><button type="button" class="ghost small" data-act="logout">Log out</button></div>
+    <div class="hint">Logged in as <b>${esc(account ? account.name : "")}</b> · ${esc(user ? user.email : "")}</div>
+    ${resumable ? `<div class="card resume"><strong>Match in progress</strong><div class="hint">${esc(match.players.map(p=>p.name).join(" vs "))} · ${esc(gameName(match.game, match.opts))}</div>
+      <button type="button" class="secondary" data-act="resume">Resume match</button></div>` : ""}
+    ${so ? `<div class="card resume"><strong>Online game ${esc(so.code)}</strong><div class="hint">Pick up where you left off.</div>
+      <div class="row"><button type="button" class="secondary" style="flex:1" data-act="rejoin">Rejoin</button><button type="button" class="ghost" data-act="forget">Forget it</button></div></div>` : ""}
+    ${s && s.games.length ? `<div class="card resume"><strong>Tonight's session: ${s.games.length} game${s.games.length===1?"":"s"} finished</strong>
+      <button type="button" class="secondary" data-act="endConfirm">End session &amp; email results</button></div>` : ""}
+    <div class="label">How are you playing?</div>
+    <button type="button" class="choice" data-act="modeLocal"><b>Play local</b><span>Everyone scores on this phone</span></button>
+    <button type="button" class="choice" data-act="modeOnline"><b>Play online</b><span>Host a game or join a friend's with a code</span></button>
+    <button type="button" class="choice alt" data-act="players"><b>Players &amp; stats</b><span>Your stats, guest players, and past sessions</span></button>
+  </div>${sessionOverlay()}`;
+}
+function renderPlayers(){
+  const P = people();
+  app.innerHTML = `<div class="wrap narrow">
+    <div class="row"><button type="button" class="ghost small" data-act="home">‹ Home</button><span></span></div>
+    <h1>Players &amp; stats</h1>
+    <div class="hint">Guest players are people without their own account who play on your phone. Their stats and emails are kept under your account.</div>
+    ${P.map(p=>`<div class="card pcard"><div class="row"><div><div class="pname">${esc(p.name)}${p.me ? ` <span class="chip">You</span>` : ""}</div>
+      <div class="hint">${p.email ? esc(p.email) : "No email (no results emails)"}</div></div></div>
+      <div class="prow wrapbtns"><button type="button" class="secondary" data-career="${p.key}">Stats</button>
+      <button type="button" class="secondary" data-edit="${p.key}">Edit</button>
+      <button type="button" class="secondary" data-reset="${p.key}">Reset stats</button>
+      ${p.me ? "" : `<button type="button" class="secondary danger" data-del="${p.key}">Delete</button>`}</div></div>`).join("")}
+    <button type="button" class="ghost" data-act="newGuest">+ Add guest player</button>
+  </div>${sessionOverlay()}`;
+}
+function accountOverlay(){
+  if(dialog==="edit" && editing){
+    const me = editing.key===meKey();
+    return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="edh">
+      <h2 id="edh">${editing.key ? `Edit ${esc(editing.name)}` : "New guest player"}</h2>
+      <form class="aform" id="editform" novalidate>
+        <label for="ed-name">Name</label><input id="ed-name" maxlength="20" value="${esc(editing.name||"")}">
+        ${me ? `<div class="hint">Your login email is ${esc(user.email)}.</div>` : `<label for="ed-email">Email for results (optional)</label><input id="ed-email" type="email" value="${esc(editing.email||"")}">`}
+        <button type="submit" class="primary">Save</button>
+        <button type="button" class="secondary" data-act="cancelEdit">Cancel</button></form></div></div>`;
+  }
+  if(dialog==="confirm" && confirmAct) return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="cfh">
+      <h2 id="cfh">Are you sure?</h2><div class="hint">${esc(confirmAct.text)}</div>
+      <div class="btns"><button type="button" class="primary" data-act="doConfirm">${esc(confirmAct.button)}</button>
+      <button type="button" class="secondary" data-act="closeDlg">Cancel</button></div></div></div>`;
+  return "";
+}
+
 /* ---------- helpers ---------- */
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const firstTo = n => Math.floor(n/2) + 1;
@@ -1456,14 +1624,14 @@ function stepper(name, val, unit){
 function renderSetup(){
   const s = settings, resumable = match && !(match.over && match.over.type==="match");
   app.innerHTML = `<div class="wrap">
-    <h1><span class="ring" aria-hidden="true"></span>Darts Scorer</h1>
-    ${resumable ? `<div class="card resume"><strong>Match in progress</strong>
+    ${profilesOn() ? `<div class="row"><button type="button" class="ghost small" data-act="home">‹ Home</button><span class="chip">${mode==="online" ? "Playing online" : "Playing local"}</span></div>` : `<h1><span class="ring" aria-hidden="true"></span>Darts Scorer</h1>`}
+    ${resumable && !profilesOn() ? `<div class="card resume"><strong>Match in progress</strong>
       <div class="hint">${esc(match.players.map(p=>p.name).join(" vs "))} · ${esc(gameName(match.game, match.opts))}</div>
       <button type="button" class="secondary" data-act="resume">Resume match</button></div>` : ""}
-    ${onlineAvailable() && savedOnline() ? `<div class="card resume"><strong>Online game ${esc(savedOnline().code)}</strong>
+    ${!profilesOn() && onlineAvailable() && savedOnline() ? `<div class="card resume"><strong>Online game ${esc(savedOnline().code)}</strong>
       <div class="hint">Pick up where you left off.</div>
       <div class="row"><button type="button" class="secondary" style="flex:1" data-act="rejoin">Rejoin</button><button type="button" class="ghost" data-act="forget">Forget it</button></div></div>` : ""}
-    ${onlineAvailable() ? `<div class="card"><div class="label">Join a friend's game</div>
+    ${onlineAvailable() && (!profilesOn() || mode==="online") && !(online && online.host) ? `<div class="card"><div class="label">Join a friend's game</div>
       <div class="prow"><input id="joincode" maxlength="4" placeholder="Game code" autocomplete="off" autocapitalize="characters" aria-label="Game code" style="text-transform:uppercase;letter-spacing:.2em;font-weight:700">
       <button type="button" class="secondary" data-act="join">Join</button></div></div>` : ""}
     <div class="card"><div class="label">Game</div>
@@ -1488,14 +1656,14 @@ function renderSetup(){
       <div class="players">${s.players.map((n,i)=>`<div class="pblock"><div class="prow">
         <input id="pl-${i}" data-pl="${i}" value="${esc(n)}" maxlength="20" aria-label="Player ${i+1} name" autocomplete="off">
         ${s.players.length>1 ? `<button type="button" class="x" data-rm="${i}" aria-label="Remove ${esc(n)}">×</button>` : ""}</div>
-        ${profilesOn() ? `<input class="em" id="em-${i}" data-em="${i}" type="email" value="${esc((s.emails||[])[i]||"")}" placeholder="Email for results (optional)" aria-label="Email for ${esc(n)}" autocomplete="off">` : ""}</div>`).join("")}</div>
-      ${profilesOn() ? `<div class="hint">Emails stay on this phone. Players with an email get their results and career stats when the session ends. Online players add their own when they join.</div>` : ""}
+        ${profilesOn() ? `<select class="em" data-link="${i}" aria-label="Stats for ${esc(n)}">${linkOptions((s.links||[])[i]||"", true)}</select>` : ""}</div>`).join("")}</div>
+      ${profilesOn() ? `<div class="hint">Pick who each player is so their stats are saved. ${mode==="online" ? "Friends joining online link themselves when they join." : "Add guest players for people without an account."}</div>` : ""}
       ${s.players.length<8 ? `<button type="button" class="ghost" data-act="addp">+ Add player</button>` : ""}
       <div class="hint">Throw order follows this list.${oneGame(s.game) ? "" : " The first thrower rotates each leg."}</div>
     </div>
     ${s.game==="killer" && s.players.length<2 ? `<div class="hint">Killer needs at least 2 players.</div>` : ""}
-    ${online && online.host ? "" : `<button type="button" class="primary" data-act="start" ${s.game==="killer" && s.players.length<2 ? "disabled" : ""}>${resumable ? "Start new match" : "Start match"}</button>`}
-    ${onlineAvailable() && !(online && online.host) ? `<button type="button" class="secondary" data-act="host" ${s.game==="killer" && s.players.length<2 ? "disabled" : ""}>Host online match</button>
+    ${(online && online.host) || (profilesOn() && mode==="online") ? "" : `<button type="button" class="primary" data-act="start" ${s.game==="killer" && s.players.length<2 ? "disabled" : ""}>${resumable && !profilesOn() ? "Start new match" : "Start match"}</button>`}
+    ${onlineAvailable() && !(online && online.host) && (!profilesOn() || mode==="online") ? `<button type="button" class="${profilesOn()?"primary":"secondary"}" data-act="host" ${s.game==="killer" && s.players.length<2 ? "disabled" : ""}>Host online match</button>
     <div class="hint" style="text-align:center">Hosting gives you a code. Friends join from their own phones and enter their own darts.</div>` : ""}
   </div>${dialog==="rules" ? rulesOverlay(s.game, s) : dialog==="join" ? onlineOverlay() : sessionOverlay()}`;
 }
@@ -1905,7 +2073,11 @@ function render(){
       const dock = app.querySelector(".dock");
       if(dock){ dock.classList.add("locked"); dock.insertAdjacentHTML("beforeend", `<div class="lockmsg">Waiting for ${esc(match.players[match.cur].name)}…</div>`); }
     }
-  } else renderSetup();
+  } else if(screen==="loading") app.innerHTML = `<div class="wrap narrow"><h1><span class="ring" aria-hidden="true"></span>Darts Scorer</h1><div class="hint">Loading…</div></div>`;
+  else if(screen==="auth") renderAuth();
+  else if(screen==="home" && profilesOn()) renderHome();
+  else if(screen==="players" && profilesOn()) renderPlayers();
+  else renderSetup();
 }
 
 /* ---------- events ---------- */
@@ -1916,14 +2088,21 @@ app.addEventListener("click", e=>{
     const i = +d.claim;
     if(dialog==="join" && joinState){
       const owner = joinState.claims[i]; if(owner && owner!==deviceId) return;
-      joinState.pick = joinState.pick.includes(i) ? joinState.pick.filter(x=>x!==i) : joinState.pick.concat([i]); render();
+      if(joinState.pick.includes(i)){ joinState.pick = joinState.pick.filter(x=>x!==i); delete joinState.links[i]; }
+      else { joinState.pick = joinState.pick.concat([i]); if(!Object.values(joinState.links).includes(meKey())) joinState.links[i] = meKey(); }
+      render();
     } else toggleClaim(i);
     return;
   }
   if(d.dd!==undefined){ answerDD(+d.dd); return; }
   if(d.career){ showCareer(d.career); return; }
+  if(d.tab){ authTab = d.tab; authMsg = ""; render(); return; }
+  if(d.edit){ const p = personByKey(d.edit); editing = { key:d.edit, name:p.name, email:p.email }; dialog = "edit"; render(); return; }
+  if(d.reset){ const p = personByKey(d.reset); askConfirm(`This deletes every saved session for ${p.name}. Their stats start again from zero.`, "Reset stats", async()=>{ await fb.ref(`${basePath(d.reset)}/history`).remove(); msg(`${p.name}'s stats were reset`); }); return; }
+  if(d.del){ const p = personByKey(d.del); askConfirm(`This deletes ${p.name} and all of their stats.`, "Delete player", async()=>{ await fb.ref(basePath(d.del)).remove(); msg(`${p.name} was deleted`); }); return; }
+  if(d.delhist){ const key = careerView.key, sid = d.delhist; askConfirm("This removes that session's games from these stats.", "Remove session", async()=>{ await fb.ref(`${basePath(key)}/history/${sid}`).remove(); await showCareer(key); }); return; }
   if(online && screen==="game" && match){
-    const free = ["quit","rules","closeRules","closeDlg","toSetup","share","copyInvite","nextLeg","rematch","undo","endConfirm","endSession","closeSummary","nextGame"];
+    const free = ["quit","rules","closeRules","closeDlg","toSetup","share","copyInvite","nextLeg","rematch","undo","endConfirm","endSession","closeSummary","nextGame","doConfirm","cancelEdit","home"];
     if(d.act==="undo" || (d.act==="back" && !entry)){
       if(match.by!==deviceId){ msg("Only the phone that entered the last score can undo it"); return; }
     } else if(!free.includes(d.act) && !match.over && !isMyTurn()){ msg(`It's ${match.players[match.cur].name}'s turn`); return; }
@@ -1938,13 +2117,13 @@ app.addEventListener("click", e=>{
   if(d.hd!==undefined){ halveDart(+d.hd, d.hmm ? +d.hmm : mod); return; }
   if(d.ch){ pickChoice(+d.ch); return; }
   if(d.step){ settings[d.step] = Math.min(15, Math.max(1, settings[d.step] + +d.d)); save(); render(); return; }
-  if(d.rm){ settings.players.splice(+d.rm,1); (settings.emails||[]).splice(+d.rm,1); save(); render(); return; }
+  if(d.rm){ settings.players.splice(+d.rm,1); (settings.links||[]).splice(+d.rm,1); save(); render(); return; }
   if(d.digit!==undefined){ if(entry.length<3 && !(entry==="" && d.digit==="0")) entry += d.digit; render(); return; }
   if(d.score!==undefined){ submitScore(+d.score); return; }
   if(d.fin){ finish(+d.fin); return; }
   if(d.n!==undefined){ throwDart(+d.n, +d.m); return; }
   switch(d.act){
-    case "addp": settings.players.push(`Player ${settings.players.length+1}`); save(); render();
+    case "addp": settings.players.push(`Player ${settings.players.length+1}`); (settings.links = settings.links || [])[settings.players.length-1] = null; save(); render();
       setTimeout(()=>{ const el=document.getElementById(`pl-${settings.players.length-1}`); if(el){ el.focus(); el.select(); } },0); break;
     case "start": goOffline(); preparePids().then(()=>startMatch()); break;
     case "startNext": { const keep = match.players.map(p=>({ name:p.name, pid:p.pid })); startMatch(keep); break; }
@@ -1952,8 +2131,17 @@ app.addEventListener("click", e=>{
     case "nextGame": dialog = null; screen = "setup"; render(); break;
     case "endConfirm": dialog = "endConfirm"; render(); break;
     case "endSession": endSession(); break;
-    case "closeSummary": dialog = null; summaryHtml = null; screen = "setup"; render(); break;
+    case "closeSummary": dialog = null; summaryHtml = null; screen = profilesOn() ? "home" : "setup"; render(); break;
     case "resume": goOffline(); screen = "game"; render(); break;
+    case "forgot": doAuth("forgot"); break;
+    case "logout": askConfirm("You'll need your email and password to log back in.", "Log out", async()=>{ goOffline(); await firebase.auth().signOut(); }); break;
+    case "home": dialog = null; screen = "home"; render(); break;
+    case "modeLocal": mode = "local"; goOffline(); screen = "setup"; if(!(settings.links||[]).some(Boolean) && meKey()) setLink(0, meKey()); render(); break;
+    case "modeOnline": mode = "online"; screen = "setup"; if(!(settings.links||[]).some(Boolean) && meKey()) setLink(0, meKey()); render(); break;
+    case "players": screen = "players"; render(); break;
+    case "newGuest": editing = { key:null, name:"", email:"" }; dialog = "edit"; render(); break;
+    case "cancelEdit": editing = null; dialog = joinState ? "join" : null; render(); break;
+    case "doConfirm": { const c = confirmAct; confirmAct = null; dialog = null; render(); if(c) Promise.resolve(c.run()).catch(()=>msg("Couldn't do that. Check your connection.")).then(()=>render()); break; }
     case "host": hostOnline(); break;
     case "join": { const el = document.getElementById("joincode"); lookupGame(el ? el.value : ""); break; }
     case "confirmJoin": confirmJoin(); break;
@@ -1977,7 +2165,7 @@ app.addEventListener("click", e=>{
     case "nextLeg": nextLeg(); break;
     case "quit": dialog = "quit"; render(); break;
     case "closeDlg": dialog = null; render(); break;
-    case "toSetup": dialog = null; screen = "setup"; stopListening(); online = null; remoteClaims = {}; render(); break;
+    case "toSetup": dialog = null; screen = profilesOn() ? "home" : "setup"; stopListening(); online = null; remoteClaims = {}; render(); break;
     case "rematch": {
       const pv = match;
       Object.assign(settings, { game:pv.game, inMode:pv.opts.inMode, outMode:pv.opts.outMode, points:pv.opts.points, lives:pv.opts.lives||3, sets:pv.opts.sets, legs:pv.opts.legs, players:pv.players.map(p=>p.name) });
@@ -1987,15 +2175,28 @@ app.addEventListener("click", e=>{
 });
 app.addEventListener("input", e=>{
   const t = e.target, d = t.dataset;
-  if(d.em!==undefined){ (settings.emails = settings.emails || [])[+d.em] = t.value; save(); return; }
-  if(d.jn!==undefined && joinState){ (joinState.info[+d.jn] = joinState.info[+d.jn] || {}).name = t.value; return; }
-  if(d.je!==undefined && joinState){ (joinState.info[+d.je] = joinState.info[+d.je] || {}).email = t.value; return; }
   if(d.pl===undefined) return;
   settings.players[+d.pl] = t.value;
-  const prof = profileByName(t.value), em = document.getElementById(`em-${d.pl}`);
-  settings.emails = settings.emails || [];
-  if(prof && em && !em.value){ em.value = prof.email; settings.emails[+d.pl] = prof.email; }
   save();
+});
+app.addEventListener("change", e=>{
+  const t = e.target, d = t.dataset;
+  if(d.link!==undefined){
+    const i = +d.link;
+    if(t.value==="new"){ editing = { key:null, name:"", email:"", forRow:i }; dialog = "edit"; render(); return; }
+    setLink(i, t.value || null); render(); return;
+  }
+  if(d.jl!==undefined && joinState){
+    const i = +d.jl;
+    if(t.value==="new"){ editing = { key:null, name:"", email:"", forJoin:i }; dialog = "edit"; render(); return; }
+    Object.keys(joinState.links).forEach(k=>{ if(t.value && joinState.links[k]===t.value && +k!==i) delete joinState.links[k]; });
+    joinState.links[i] = t.value || null; render();
+  }
+});
+app.addEventListener("submit", e=>{
+  e.preventDefault();
+  if(e.target.id==="authform") doAuth(authTab==="signup" ? "signup" : "login");
+  if(e.target.id==="editform") saveEditing();
 });
 document.addEventListener("keydown", e=>{
   if(screen!=="game" || !match || dialog || e.target.tagName==="INPUT") return;
@@ -2009,11 +2210,8 @@ document.addEventListener("keydown", e=>{
 });
 
 load();
-render();
-if(profilesOn()){
-  const so = savedOnline();
-  if(so) fbInit().then(()=>fb.ref(`games/${so.code}/session/ended`).get()).then(s=>{ if(s && s.val()) onlineSessionEnded(so.code); }).catch(()=>{});
-}
+if(profilesOn()){ screen = "loading"; render(); startAuth(); }
+else render();
 })();
 </script>
 </body>
