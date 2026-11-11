@@ -261,6 +261,16 @@ h1 .ring{width:38px;height:38px;flex:none;background:url(data:image/png;base64,i
 @keyframes gopulse{50%{box-shadow:0 0 0 3px #ffd60a,0 0 4px rgba(255,214,10,.2)}}
 @media (prefers-reduced-motion:reduce){.miss.go{animation:none}}
 
+.pad .k.op{background:linear-gradient(#3b3b42,#1d1d21);color:#fff;border-color:#55555e;font-size:38px}
+.pad .k.clr{background:linear-gradient(#3b3b42,#1d1d21);color:#ffd60a;border-color:#55555e}
+.pad .k:disabled{opacity:.35}
+.pad .q:disabled{opacity:.25}
+.disp .calceq{color:#ffd60a}
+.calcline{font-size:24px;font-weight:800;color:#fff;text-align:center;padding:2px 8px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;unicode-bidi:plaintext}
+.miss.ent{background:linear-gradient(#11793d,#0a4f27);border-color:#11793d}
+.big .prev{color:#d4a90a}
+.side:not(.active) .big .prev{color:#ffd60a}
+
 /* bar + entry + keypad */
 .bar{display:grid;grid-template-columns:44px 1fr auto 44px;align-items:center;gap:8px;margin:0 6px;padding:6px 8px;border-radius:10px 10px 0 0;background:linear-gradient(#c8102e,#8e0b1f)}
 .bar .ib{width:36px;height:34px;border-radius:6px;display:grid;place-items:center;font-size:20px;font-weight:700;background:rgba(0,0,0,.25);color:#fff}
@@ -1865,7 +1875,10 @@ function roundNo(){ if(isRG(match.game)){ const r = rgRounds(); return r ? Math.
 function L_round(){ return match.leg.phase==="pick" ? "Throw for numbers" : `Round ${roundNo()}`; }
 function bigValue(i){
   const P = match.leg.p[i];
-  if(is01(match.game)) return P.score;
+  if(is01(match.game)){
+    if(i===match.cur && entry && !match.over){ const v = entryValue(); if(v!==null && v<=P.score) return `<span class="prev">${P.score - v}</span>`; }
+    return P.score;
+  }
   if(match.game==="halveit") return P.total;
   if(match.game==="atc") return P.pos>=ATC_T.length ? "✓" : ATC_T[P.pos]===25 ? "B" : ATC_T[P.pos];
   if(isRG(match.game)) return P.out ? "–" : P.total;
@@ -1942,10 +1955,56 @@ function renderBar(){
     <span class="bt">${match.base==="medley" ? "Medley · " : ""}${match.game==="hammer" ? "Hammer" : shortName(match.game)} · ${t}</span><span class="bs">${s}${online ? ` <button type="button" class="codechip" data-act="share">● ${esc(online.code)}</button>` : ""}</span>
     <button type="button" class="ib" data-act="undo" aria-label="Undo" ${hist.length?"":"disabled"}>↶</button></div>`;
 }
+/* calculator for typed totals: digits, × and + (e.g. 2+9+5×3) */
+function calcValue(str){
+  const s = String(str||"").replace(/[+×]+$/,"");
+  if(!s) return null;
+  return s.split("+").reduce((sum,term)=>sum + term.split("×").reduce((a,b)=>a*(+b||0),1), 0);
+}
+const isCalc = str => /[+×]/.test(str||"");
+function calcText(str){
+  if(!isCalc(str)) return esc(str);
+  const terms = String(str).split("+").map(t=>t.includes("×") ? `(${t.split("×").join(" × ")})` : t);
+  const v = calcValue(str);
+  return `<span class="calceq">${v===null ? "" : v}</span>`;
+}
+function calcLine(){
+  if(!isCalc(entry)) return "";
+  const terms = entry.replace(/[+×]$/,m=>m).split("+").map(t=>t.includes("×") ? `(${t.split("×").join(" × ")})` : t);
+  return `<div class="calcline">${esc(terms.join(" + "))}</div>`;
+}
+function calcKey(ch){
+  if(/[0-9]/.test(ch)){
+    const last = (entry.split(/[+×]/).pop()) || "";
+    if(last.length>=3 || (last==="" && ch==="0" && !isCalc(entry) && entry==="")) return;
+    if(last==="0") return;
+    if(entry.length<24) entry += ch;
+  } else if(ch==="+" || ch==="×"){
+    if(!entry) return;
+    if(/[+×]$/.test(entry)) entry = entry.slice(0,-1) + ch;
+    else if(entry.length<24) entry += ch;
+  } else if(ch==="C") entry = "";
+}
+const entryValue = () => calcValue(entry);
+/* the bottom rows of a total keypad: quick scores when empty, calculator keys while typing */
+function calcRows(q, k, dis, wide){
+  if(!wide){
+    return entry
+      ? `<button type="button" class="k op" data-op="×" ${dis}>×</button>${k(0)}<button type="button" class="k op" data-op="+" ${dis}>+</button>
+         <button type="button" class="k clr" data-op="C" ${dis}>C</button><button type="button" class="enter" data-act="enter" style="grid-column:span 2">ENTER</button>`
+      : `<button type="button" class="k op" data-op="×" disabled>×</button>${k(0)}<button type="button" class="k op" data-op="+" disabled>+</button>
+         <button type="button" class="enter" data-act="enter" style="grid-column:span 3" disabled>ENTER</button>`;
+  }
+  return entry
+    ? `${q(43,true)}<button type="button" class="k op" data-op="×" ${dis}>×</button>${k(0)}<button type="button" class="k op" data-op="+" ${dis}>+</button>${q(85,true)}
+       ${q(57,true)}<button type="button" class="k clr" data-op="C" ${dis}>C</button><button type="button" class="enter" data-act="enter">ENTER</button>${q(95,true)}`
+    : `${q(43)}<button type="button" class="k g" data-score="100" ${dis}>100</button><button type="button" class="k r" data-score="180" ${dis}>180</button><button type="button" class="k g" data-score="140" ${dis}>140</button>${q(85)}
+       ${q(57)}${k(0)}<button type="button" class="enter" data-act="enter" disabled>ENTER</button>${q(95)}`;
+}
 function render01Dock(){
   const p = match.leg.p[match.cur], dbl = match.opts.outMode==="double";
   let disp, cls = "";
-  if(entry){ disp = entry; cls = "typed"; }
+  if(entry){ disp = calcText(entry); cls = isCalc(entry) ? "typed calcd" : "typed"; }
   else if(!p.isIn) disp = "Double-In";
   else {
     const co = checkout(p.score, 3, dbl);
@@ -1953,19 +2012,18 @@ function render01Dock(){
     else if(p.turns===0) disp = match.opts.inMode==="double" ? "Double-In" : "Straight-In";
     else disp = `<span class="muted">${esc(match.players[match.cur].name)} to throw</span>`;
   }
-  const q = (v)=>`<button type="button" class="q" data-score="${v}">${v}</button>`;
-  const k = (d)=>`<button type="button" class="k" data-digit="${d}">${d}</button>`;
   const dis = match.over ? "disabled" : "";
+  const q = (v,off)=>`<button type="button" class="q" data-score="${v}" ${off||dis?"disabled":""}>${v}</button>`;
+  const k = (d)=>`<button type="button" class="k" data-digit="${d}" ${dis}>${d}</button>`;
   return `<div class="dock">
-    <div class="entry"><button type="button" class="back" data-act="back">BACK</button>
+    ${calcLine()}<div class="entry"><button type="button" class="back" data-act="back">BACK</button>
       <div class="disp ${cls}" aria-live="polite">${disp}</div>
-      <button type="button" class="miss" data-score="0" ${dis}>MISS</button></div>
+      ${entry ? `<button type="button" class="miss ent" data-act="enter" ${dis}>ENTER</button>` : `<button type="button" class="miss" data-score="0" ${dis}>MISS</button>`}</div>
     <div class="pad">
-      ${q(26)}${k(1)}${k(2)}${k(3)}${q(45)}
-      ${q(40)}${k(4)}${k(5)}${k(6)}${q(60)}
-      ${q(41)}${k(7)}${k(8)}${k(9)}${q(81)}
-      ${q(43)}<button type="button" class="k g" data-score="100">100</button><button type="button" class="k r" data-score="180">180</button><button type="button" class="k g" data-score="140">140</button>${q(85)}
-      ${q(57)}${k(0)}<button type="button" class="enter" data-act="enter" ${entry?"":"disabled"}>ENTER</button>${q(95)}
+      ${q(26,!!entry)}${k(1)}${k(2)}${k(3)}${q(45,!!entry)}
+      ${q(40,!!entry)}${k(4)}${k(5)}${k(6)}${q(60,!!entry)}
+      ${q(41,!!entry)}${k(7)}${k(8)}${k(9)}${q(81,!!entry)}
+      ${calcRows(q,k,dis,true)}
     </div></div>`;
 }
 function renderCricketDock(){
@@ -2154,15 +2212,15 @@ function renderHalveDock(){
   if(t==="EVEN" || t==="ODD"){
     const q = v=>`<button type="button" class="q" data-score="${v}" ${dis}>${v}</button>`;
     const k = d=>`<button type="button" class="k" data-digit="${d}" ${dis}>${d}</button>`;
-    const disp = entry ? entry : `<span class="muted">Enter 3-dart total</span>`;
+    const disp = entry ? calcText(entry) : `<span class="muted">Enter 3-dart total</span>`;
     return `<div class="dock">
     <div class="throwing"><span class="tname">${name}</span> · <b>${t}</b> · total must be ${t.toLowerCase()}</div>
-    <div class="entry"><button type="button" class="back" data-act="back">BACK</button>
-      <div class="disp ${entry?"typed":""}">${disp}</div>
-      <button type="button" class="miss" data-score="0" ${dis}>MISS</button></div>
+    ${calcLine()}<div class="entry"><button type="button" class="back" data-act="back">BACK</button>
+      <div class="disp ${entry?(isCalc(entry)?"typed calcd":"typed"):""}">${disp}</div>
+      ${entry ? `<button type="button" class="miss ent" data-act="enter" ${dis}>ENTER</button>` : `<button type="button" class="miss" data-score="0" ${dis}>MISS</button>`}</div>
     <div class="pad p3">
       ${k(1)}${k(2)}${k(3)}${k(4)}${k(5)}${k(6)}${k(7)}${k(8)}${k(9)}
-      ${k(0)}<button type="button" class="enter" data-act="enter" ${entry?"":"disabled"}>ENTER</button>
+      ${calcRows(q,k,dis,false)}
     </div></div>`;
   }
   const left = 3 - match.turn.length;
@@ -2221,18 +2279,17 @@ function renderRGDock(){
   const name = esc(match.players[match.cur].name);
   const back = `<button type="button" class="back" data-act="${g==="countup"?"back":"undo"}" ${g==="countup"||hist.length?"":"disabled"}>BACK</button>`;
   if(g==="countup"){
-    const q = v=>`<button type="button" class="q" data-score="${v}" ${dis}>${v}</button>`;
+    const q = (v,off)=>`<button type="button" class="q" data-score="${v}" ${off||dis?"disabled":""}>${v}</button>`;
     const k = d=>`<button type="button" class="k" data-digit="${d}" ${dis}>${d}</button>`;
     return `<div class="dock">
     <div class="throwing"><span class="tname">${name}</span> · round ${roundNo()} of ${rgRounds().length}</div>
-    <div class="entry">${back}<div class="disp ${entry?"typed":""}">${entry || `<span class="muted">Enter 3-dart score</span>`}</div>
-      <button type="button" class="miss" data-score="0" ${dis}>MISS</button></div>
+    ${calcLine()}<div class="entry">${back}<div class="disp ${entry?(isCalc(entry)?"typed calcd":"typed"):""}">${entry ? calcText(entry) : `<span class="muted">Enter 3-dart score</span>`}</div>
+      ${entry ? `<button type="button" class="miss ent" data-act="enter" ${dis}>ENTER</button>` : `<button type="button" class="miss" data-score="0" ${dis}>MISS</button>`}</div>
     <div class="pad">
-      ${q(26)}${k(1)}${k(2)}${k(3)}${q(45)}
-      ${q(40)}${k(4)}${k(5)}${k(6)}${q(60)}
-      ${q(41)}${k(7)}${k(8)}${k(9)}${q(81)}
-      ${q(43)}<button type="button" class="k g" data-score="100" ${dis}>100</button><button type="button" class="k r" data-score="180" ${dis}>180</button><button type="button" class="k g" data-score="140" ${dis}>140</button>${q(85)}
-      ${q(57)}${k(0)}<button type="button" class="enter" data-act="enter" ${entry?"":"disabled"}>ENTER</button>${q(95)}
+      ${q(26,!!entry)}${k(1)}${k(2)}${k(3)}${q(45,!!entry)}
+      ${q(40,!!entry)}${k(4)}${k(5)}${k(6)}${q(60,!!entry)}
+      ${q(41,!!entry)}${k(7)}${k(8)}${k(9)}${q(81,!!entry)}
+      ${calcRows(q,k,dis,true)}
     </div></div>`;
   }
   if(g==="bobs"){
@@ -2375,7 +2432,8 @@ app.addEventListener("click", e=>{
     if(ft!=="bull" && ft!=="random"){ if(+ft===rm) settings.firstThrow = "0"; else if(+ft>rm) settings.firstThrow = String(+ft-1); }
     save(); render(); return;
   }
-  if(d.digit!==undefined){ if(entry.length<3 && !(entry==="" && d.digit==="0")) entry += d.digit; render(); return; }
+  if(d.digit!==undefined){ calcKey(d.digit); render(); return; }
+  if(d.op!==undefined){ calcKey(d.op); render(); return; }
   if(d.score!==undefined){ submitScore(+d.score); return; }
   if(d.fin){ finish(+d.fin); return; }
   if(d.n!==undefined){ throwDart(+d.n, +d.m); return; }
@@ -2413,7 +2471,7 @@ app.addEventListener("click", e=>{
     }
     case "undo": undo(); break;
     case "back": if(entry){ entry = entry.slice(0,-1); render(); } else undo(); break;
-    case "enter": if(entry) submitScore(+entry); break;
+    case "enter": if(entry){ const v = entryValue(); if(v!==null) submitScore(v); } break;
     case "crest": if(isRG(match.game)) rgRest(); else cricketRest(); break;
     case "rules": dialog = "rules"; render(); break;
     case "closeRules": dialog = screen==="game" ? "quit" : null; render(); break;
@@ -2467,9 +2525,11 @@ document.addEventListener("keydown", e=>{
   if(online && !isMyTurn()) return;
   const totalEntry = is01(match.game) || match.game==="countup" || (match.game==="halveit" && ["EVEN","ODD"].includes(halveTarget()));
   if(!totalEntry || match.over || pending) return;
-  if(/^[0-9]$/.test(e.key)){ if(entry.length<3 && !(entry==="" && e.key==="0")) entry += e.key; render(); }
+  if(/^[0-9]$/.test(e.key)){ calcKey(e.key); render(); }
+  else if(e.key==="+"){ calcKey("+"); render(); }
+  else if(e.key==="*" || e.key==="x" || e.key==="X"){ calcKey("×"); render(); }
   else if(e.key==="Backspace"){ entry = entry.slice(0,-1); render(); }
-  else if(e.key==="Enter" && entry){ submitScore(+entry); }
+  else if(e.key==="Enter" && entry){ const v = entryValue(); if(v!==null) submitScore(v); }
 });
 
 load();
