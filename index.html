@@ -1776,6 +1776,8 @@ function renderSetup(){
     ${sessionSetupCards()}
     ${online && online.host ? `<div class="card resume"><strong>Online game ${esc(online.code)}: pick the next game</strong>
       <div class="hint">Same players: ${esc(match.players.map(p=>p.name).join(", "))}. Everyone's phone switches over when you start.</div>
+      <div class="label">Throws first</div>
+      <div class="seg small first">${segBtns("firstThrow", match.players.map((p,i)=>[String(i), esc(p.name)]).concat([["bull","Bull-off"],["random","Random"]]), String(s.firstThrow||"0"))}</div>
       <button type="button" class="primary" data-act="startNext">Start next game</button>
       <button type="button" class="secondary" data-act="backToGame">Back to the game</button></div>` : ""}
     <div class="card" ${online && online.host ? 'hidden' : ""}><div class="label">Players</div>
@@ -1941,6 +1943,14 @@ function renderCricketDock(){
 function renderOverlay(){
   const so = sessionOverlay(); if(so) return so;
   if(dialog==="rules") return rulesOverlay(match.game, match.opts);
+  if(dialog==="rematch"){
+    const o = match.over || {}, wins = o.tie ? o.tie : [o.winner];
+    return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="rmh">
+      <h2 id="rmh">Rematch: who throws first?</h2>
+      <div class="claims">${match.players.map((p,i)=>`<button type="button" class="claim" data-act="rematchGo" data-ft="${i}"><span>${esc(p.name)}</span><span class="cs">${wins.includes(i) ? "Won last game" : ""}</span></button>`).join("")}</div>
+      <div class="dchoice" style="grid-template-columns:1fr 1fr"><button type="button" data-act="rematchGo" data-ft="bull" style="font-size:22px">Bull-off</button><button type="button" data-act="rematchGo" data-ft="random" style="font-size:22px">Random</button></div>
+      <button type="button" class="secondary" data-act="closeDlg">Cancel</button></div></div>`;
+  }
   if(dialog==="share") return onlineOverlay();
   if(dialog==="quit") return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="qh">
     <h2 id="qh">Menu</h2><div class="hint">Leaving keeps this match saved on this device, so you can resume it from the start screen.</div>
@@ -2259,7 +2269,7 @@ app.addEventListener("click", e=>{
   if(d.del){ const p = personByKey(d.del); askConfirm(`This deletes ${p.name} and all of their stats.`, "Delete player", async()=>{ await fb.ref(basePath(d.del)).remove(); msg(`${p.name} was deleted`); }); return; }
   if(d.delhist){ const key = careerView.key, sid = d.delhist; askConfirm("This removes that session's games from these stats.", "Remove session", async()=>{ await fb.ref(`${basePath(key)}/history/${sid}`).remove(); await showCareer(key); }); return; }
   if(online && screen==="game" && match){
-    const free = ["quit","rules","closeRules","closeDlg","toSetup","share","copyInvite","nextLeg","rematch","undo","endConfirm","endSession","closeSummary","nextGame","doConfirm","cancelEdit","home","corkWin","corkGame"];
+    const free = ["quit","rules","closeRules","closeDlg","toSetup","share","copyInvite","nextLeg","rematch","undo","endConfirm","endSession","closeSummary","nextGame","doConfirm","cancelEdit","home","corkWin","corkGame","rematchGo"];
     if(d.act==="undo" || (d.act==="back" && !entry)){
       if(match.by!==deviceId){ msg("Only the phone that entered the last score can undo it"); return; }
     } else if(!free.includes(d.act) && !match.over && !isMyTurn()){ msg(`It's ${match.players[match.cur].name}'s turn`); return; }
@@ -2335,10 +2345,12 @@ app.addEventListener("click", e=>{
     case "quit": dialog = "quit"; render(); break;
     case "closeDlg": dialog = null; render(); break;
     case "toSetup": dialog = null; screen = profilesOn() ? "home" : "setup"; stopListening(); online = null; remoteClaims = {}; render(); break;
-    case "rematch": {
+    case "rematch": dialog = "rematch"; render(); break;
+    case "rematchGo": {
       const pv = match;
-      Object.assign(settings, { game:pv.base||pv.game, inMode:pv.opts.inMode, outMode:pv.opts.outMode, points:pv.opts.points, lives:pv.opts.lives||3, hammerMode:pv.opts.hammerMode||"open", sets:pv.opts.sets, legs:pv.opts.legs, players:pv.players.map(p=>p.name) });
-      startMatch(); break;
+      Object.assign(settings, { game:pv.base||pv.game, inMode:pv.opts.inMode, outMode:pv.opts.outMode, points:pv.opts.points, lives:pv.opts.lives||3, hammerMode:pv.opts.hammerMode||"open", shRounds:pv.opts.shRounds||settings.shRounds, cuRounds:pv.opts.cuRounds||settings.cuRounds, sets:pv.opts.sets, legs:pv.opts.legs, players:pv.players.map(p=>p.name), firstThrow:d.ft });
+      dialog = null;
+      startMatch(pv.players.map(p=>({ name:p.name, pid:p.pid||null }))); break;
     }
   }
 });
