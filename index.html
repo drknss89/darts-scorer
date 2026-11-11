@@ -231,6 +231,16 @@ h1 .ring{width:38px;height:38px;flex:none;background:url(data:image/png;base64,i
 
 .seg.first button{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
+/* tablets: landscape puts the board on the left and the scorer on the right */
+.game.wide{max-width:1400px;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(380px,1fr);grid-template-rows:auto auto minmax(0,1fr) auto auto;column-gap:14px;flex-direction:initial}
+.game.wide > .roundline{grid-column:1/-1;grid-row:1}
+.game.wide > .hdr{grid-column:1/-1;grid-row:2}
+.game.wide > .board{grid-column:1;grid-row:3/6;min-height:0}
+.game.wide > .bar{grid-column:2;grid-row:4;align-self:end}
+.game.wide > .dock{grid-column:2;grid-row:5}
+.game.wide .pad button{height:clamp(50px,7.2vh,66px)}
+.game.wide .pad.big2 .k,.game.wide .pad.big3 .k,.game.wide .pad.p4 .k{height:clamp(76px,12vh,110px)}
+
 /* bar + entry + keypad */
 .bar{display:grid;grid-template-columns:44px 1fr auto 44px;align-items:center;gap:8px;margin:0 6px;padding:6px 8px;border-radius:10px 10px 0 0;background:linear-gradient(#c8102e,#8e0b1f)}
 .bar .ib{width:36px;height:34px;border-radius:6px;display:grid;place-items:center;font-size:20px;font-weight:700;background:rgba(0,0,0,.25);color:#fff}
@@ -2233,9 +2243,22 @@ function renderGame(){
   if(hv || rg){ const c = document.getElementById("hcur"), b = document.getElementById("board"); if(c && b) b.scrollTop = c.offsetTop - b.clientHeight/2 + c.offsetHeight/2; }
   if(x01){ const b = document.getElementById("board"); b.scrollTop = b.scrollHeight; }
 }
+/* scale the game screen to fill tablets and unfolded phones */
+function fitGame(){
+  const g = app.querySelector(".game"); if(!g) return;
+  const W = window.innerWidth, H = window.innerHeight;
+  const wide = W>=900 && W>H*1.15;
+  g.classList.toggle("wide", wide);
+  let z = wide ? Math.min(W/1150, H/720) : (W>=700 ? Math.min(W/640, H/880) : 1);
+  z = Math.max(1, Math.min(z, 1.9));
+  g.style.zoom = z === 1 ? "" : String(z);
+  g.style.height = z === 1 ? "" : (H/z) + "px";
+}
+window.addEventListener("resize", ()=>{ if(screen==="game") fitGame(); });
 function render(){
   if(screen==="game" && match){
     renderGame();
+    fitGame();
     if(online && !match.over && !isMyTurn()){
       const dock = app.querySelector(".dock");
       if(dock){ dock.classList.add("locked"); dock.insertAdjacentHTML("beforeend", `<div class="lockmsg">Waiting for ${esc(match.players[match.cur].name)}…</div>`); }
