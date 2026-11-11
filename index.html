@@ -271,6 +271,11 @@ h1 .ring{width:38px;height:38px;flex:none;background:url(data:image/png;base64,i
 .big .prev{color:#d4a90a}
 .side:not(.active) .big .prev{color:#ffd60a}
 
+/* tablets: larger column names over the boards */
+@media (min-width:700px){ .ht th{font-size:17px} .cg .lbl{font-size:16px} }
+@media (min-width:700px) and (min-height:600px){ .ov .sheet:not(.wide):not(.rules){max-width:440px;transform:scale(1.1)} }
+@media (min-width:700px) and (min-height:900px){ .ov .sheet:not(.wide):not(.rules){transform:scale(1.25)} }
+
 /* bar + entry + keypad */
 .bar{display:grid;grid-template-columns:44px 1fr auto 44px;align-items:center;gap:8px;margin:0 6px;padding:6px 8px;border-radius:10px 10px 0 0;background:linear-gradient(#c8102e,#8e0b1f)}
 .bar .ib{width:36px;height:34px;border-radius:6px;display:grid;place-items:center;font-size:20px;font-weight:700;background:rgba(0,0,0,.25);color:#fff}
@@ -2147,8 +2152,8 @@ function renderKillerDock(){
     const used = L.p.map(q=>q.num);
     const canReuse = match.lastNums && match.lastNums.length===match.players.length && L.p.every(q=>q.num===null);
     const keys = [...Array(20).keys()].map(k=>k+1).concat([25]).map(n=>`<button type="button" class="k ${n===25?"bullk":""}" data-pick="${n}" ${used.includes(n)?"disabled":""}>${n===25?"Bull":n}</button>`).join("");
-    return `<div class="dock"><div class="entry"><button type="button" class="back" data-act="undo" ${hist.length?"":"disabled"}>BACK</button>
-      <div class="disp"><span class="muted">${esc(match.players[match.cur].name)}: throw for a number</span></div>
+    return `<div class="dock"><div class="throwing"><span class="tname">${esc(match.players[match.cur].name)}</span> · throw for a number</div><div class="entry"><button type="button" class="back" data-act="undo" ${hist.length?"":"disabled"}>BACK</button>
+      <div class="disp"><span class="muted">Tap the number hit</span></div>
       <button type="button" class="miss" data-act="rand">RANDOM</button></div>
       <div class="pad np">${keys}</div>
       ${canReuse ? `<button type="button" class="secondary" data-act="reuse">Keep last leg's numbers</button>` : ""}</div>`;
