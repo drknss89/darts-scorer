@@ -48,5 +48,12 @@ Build it as a separate "bridge" page that joins an online game by code and only 
 into the existing engine, so every game and rule automatically works with auto-scoring.
 The connection to Autodarts is unofficial (community tools read its throw data), so check how before building.
 
+## Parked: live video in online matches (Ryan wants this later)
+Plan agreed on 2026-11-10, not started:
+1. WebRTC video between players in online games, signalling through the existing Firebase game node. Small video window above the scoreboard, plus a front/rear camera flip button. Also *try* opening both cameras at once, falling back to one if the phone refuses (most Android Chrome builds won't allow two cameras at the same time).
+2. A "camera only" join mode so a second phone or tablet can stream the board.
+3. If peers can't connect on mobile data, add a free TURN relay (for example Cloudflare). Start with STUN only.
+Needs real two-phone testing, so wait until Ryan has time.
+
 ## Working with Ryan
 He's on an Android phone (Samsung Fold). Keep steps phone-friendly and test changes before pushing.
