@@ -109,7 +109,7 @@ h1 .ring{width:38px;height:38px;flex:none;background:url(data:image/png;base64,i
 .cnum{height:56px;border-radius:8px;background:linear-gradient(#d4142f,#8e0b1f);color:#fff;font-family:var(--display);font-weight:800;font-size:46px;line-height:1;
   box-shadow:0 2px 0 #4a0610;text-shadow:0 0 8px rgba(255,255,255,.35)}
 .cmod{height:38px;border-radius:6px;background:linear-gradient(#d4142f,#8e0b1f);color:#fff;font-family:var(--display);font-weight:800;font-size:22px;box-shadow:0 2px 0 #4a0610}
-.cg .dead{opacity:.3}
+.cg button.dead{background:linear-gradient(#3a3a40,#232327);color:#5f5f68;box-shadow:none;text-shadow:none}
 .cg .pts{font-family:var(--display);font-weight:700;font-size:18px;color:var(--muted);text-align:center}
 
 /* killer */
@@ -1923,11 +1923,11 @@ function renderCricketBoard(){
   for(const t of TARGETS){
     const dead = L.p.every(p=>p.marks[t]===3) ? "dead" : "";
     const tm = i => i===match.cur && !match.over && turnHits[t] ? `<span class="tm">${turnHits[t]}</span>` : `<span class="tm"></span>`;
-    html += left.map(i=>`<div class="mk L ${dead}">${tm(i)}${MARK[L.p[i].marks[t]]}</div>`).join("");
+    html += left.map(i=>`<div class="mk L">${tm(i)}${MARK[L.p[i].marks[t]]}</div>`).join("");
     html += `<button type="button" class="cmod ${dead}" data-n="${t}" data-m="2" ${dis}>D</button>`;
     html += `<button type="button" class="cnum ${dead}" data-n="${t}" data-m="1" ${dis}>${t===25?"B":t}</button>`;
     html += t===25 ? `<div></div>` : `<button type="button" class="cmod ${dead}" data-n="${t}" data-m="3" ${dis}>T</button>`;
-    html += right.map(i=>`<div class="mk R ${dead}">${MARK[L.p[i].marks[t]]}${tm(i)}</div>`).join("");
+    html += right.map(i=>`<div class="mk R">${MARK[L.p[i].marks[t]]}${tm(i)}</div>`).join("");
   }
   return `<div class="cg" style="grid-template-columns:${cols};grid-template-rows:${n>2?"auto ":""}repeat(7,minmax(34px,1fr))">${html}</div>`;
 }
