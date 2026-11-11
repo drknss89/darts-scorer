@@ -229,6 +229,8 @@ h1 .ring{width:38px;height:38px;flex:none;background:url(data:image/png;base64,i
 .ordiv::before,.ordiv::after{content:"";flex:1;height:1px;background:var(--line)}
 .gbtn{padding:14px;border-radius:10px;background:#fff;color:#1f1f1f;font-weight:600;font-size:17px;border:1px solid #dadce0}
 
+.seg.first button{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
 /* bar + entry + keypad */
 .bar{display:grid;grid-template-columns:44px 1fr auto 44px;align-items:center;gap:8px;margin:0 6px;padding:6px 8px;border-radius:10px 10px 0 0;background:linear-gradient(#c8102e,#8e0b1f)}
 .bar .ib{width:36px;height:34px;border-radius:6px;display:grid;place-items:center;font-size:20px;font-weight:700;background:rgba(0,0,0,.25);color:#fff}
@@ -297,7 +299,7 @@ const catOf = g => (CATS.find(c=>c[2].includes(g)) || CATS[0])[0];
 const KEY = "dartsScorer.v2";
 const app = document.getElementById("app");
 
-let settings = { game:"501", inMode:"straight", outMode:"double", points:true, lives:3, shRounds:7, cuRounds:8, hammerMode:"open", sets:1, legs:3, emails:[], players:["Home","Away"] };
+let settings = { game:"501", inMode:"straight", outMode:"double", points:true, lives:3, shRounds:7, cuRounds:8, firstThrow:"0", hammerMode:"open", sets:1, legs:3, emails:[], players:["Home","Away"] };
 let match = null, hist = [], screen = "setup", dialog = null, entry = "", pending = null, mod = 1;
 
 /* ---------- storage ---------- */
@@ -1208,7 +1210,12 @@ function startMatch(keep){
     match.hTargets = HAMMER_BASE.map(t=>t==="W" ? WILD_POOL[Math.floor(Math.random()*WILD_POOL.length)] : t);
     match.hWild = HAMMER_BASE.map(t=>t==="W");
   }
+  const ft = String(settings.firstThrow || "0"), n = match.players.length;
+  if(ft==="random") match.legStarter = Math.floor(Math.random()*n);
+  else if(ft!=="bull" && +ft < n) match.legStarter = +ft;
+  match.cur = match.legStarter;
   match.leg = newLeg();
+  if(ft==="bull" && n>1) match.cork = { stage:"who", start:true };
   hist = []; entry = ""; pending = null; screen = "game"; save(); render();
 }
 function snapshot(){ hist.push(JSON.stringify(match)); if(hist.length>400) hist.shift(); match.by = deviceId; }
@@ -1594,7 +1601,14 @@ function nextLeg(){
 }
 function corkWinner(i){
   if(!match.cork) return;
-  snapshot(); match.cork = { stage:"pick", winner:i }; save(); render();
+  snapshot();
+  if(match.cork.start){
+    match.cork = null; match.legStarter = i; match.cur = i;
+    match.leg = newLeg(); match.turn = []; match.turnMarks = 0;
+    if(match.game==="killer") advancePick();
+    toast(`${match.players[i].name} throws first`);
+  } else match.cork = { stage:"pick", winner:i };
+  save(); render();
 }
 function corkGame(g){
   if(!match.cork || match.cork.winner===undefined) return;
@@ -1771,7 +1785,9 @@ function renderSetup(){
         ${profilesOn() ? `<select class="em" data-link="${i}" aria-label="Stats for ${esc(n)}">${linkOptions((s.links||[])[i]||"", true)}</select>` : ""}</div>`).join("")}</div>
       ${profilesOn() ? `<div class="hint">Pick who each player is so their stats are saved. ${mode==="online" ? "Friends joining online link themselves when they join." : "Add guest players for people without an account."}</div>` : ""}
       ${s.players.length<8 ? `<button type="button" class="ghost" data-act="addp">+ Add player</button>` : ""}
-      <div class="hint">Throw order follows this list.${oneGame(s.game) ? "" : " The first thrower rotates each leg."}</div>
+      ${s.players.length>1 ? `<div class="label">Throws first</div>
+      <div class="seg small first">${segBtns("firstThrow", s.players.map((n,i)=>[String(i), esc(n.trim() || `Player ${i+1}`)]).concat([["bull","Bull-off"],["random","Random"]]), String(s.firstThrow||"0"))}</div>` : ""}
+      <div class="hint">Turns go in list order, starting from whoever throws first.${oneGame(s.game) ? "" : " The first thrower then rotates each leg."}</div>
     </div>
     ${s.game==="killer" && s.players.length<2 ? `<div class="hint">Killer needs at least 2 players.</div>` : ""}
     ${(online && online.host) || (profilesOn() && mode==="online") ? "" : `<button type="button" class="primary" data-act="start" ${s.game==="killer" && s.players.length<2 ? "disabled" : ""}>${resumable && !profilesOn() ? "Start new match" : "Start match"}</button>`}
@@ -1939,11 +1955,11 @@ function renderOverlay(){
   if(match.cork){
     const c = match.cork;
     if(c.stage==="who") return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ckh">
-      <h2 id="ckh">Deciding leg: throw for the bull</h2>
-      <div class="hint">Each player throws one dart at the bull. Closest wins, picks the game and throws first.</div>
+      <h2 id="ckh">${c.start ? "Throw for the bull" : "Deciding leg: throw for the bull"}</h2>
+      <div class="hint">${c.start ? "Each player throws one dart at the bull. Closest throws first." : "Each player throws one dart at the bull. Closest wins, picks the game and throws first."}</div>
       <div class="label">Who won the bull?</div>
       <div class="claims">${match.players.map((p,i)=>`<button type="button" class="claim" data-act="corkWin" data-i="${i}"><span>${esc(p.name)}</span><span class="cs">Won the bull</span></button>`).join("")}</div>
-      <button type="button" class="secondary" data-act="undo">Undo</button></div></div>`;
+      ${c.start ? "" : `<button type="button" class="secondary" data-act="undo">Undo</button>`}</div></div>`;
     return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ckh2">
       <h2 id="ckh2">${esc(match.players[c.winner].name)}, pick the game</h2>
       <div class="hint">${esc(match.players[c.winner].name)} throws first in the deciding leg.</div>
@@ -2262,7 +2278,12 @@ app.addEventListener("click", e=>{
     else settings[d.step] = Math.min(15, Math.max(1, settings[d.step] + +d.d));
     save(); render(); return;
   }
-  if(d.rm){ settings.players.splice(+d.rm,1); (settings.links||[]).splice(+d.rm,1); save(); render(); return; }
+  if(d.rm){
+    const rm = +d.rm, ft = settings.firstThrow;
+    settings.players.splice(rm,1); (settings.links||[]).splice(rm,1);
+    if(ft!=="bull" && ft!=="random"){ if(+ft===rm) settings.firstThrow = "0"; else if(+ft>rm) settings.firstThrow = String(+ft-1); }
+    save(); render(); return;
+  }
   if(d.digit!==undefined){ if(entry.length<3 && !(entry==="" && d.digit==="0")) entry += d.digit; render(); return; }
   if(d.score!==undefined){ submitScore(+d.score); return; }
   if(d.fin){ finish(+d.fin); return; }
@@ -2325,6 +2346,7 @@ app.addEventListener("input", e=>{
   const t = e.target, d = t.dataset;
   if(d.pl===undefined) return;
   settings.players[+d.pl] = t.value;
+  const chip = app.querySelector(`.seg.first button[data-val="${d.pl}"]`); if(chip) chip.textContent = t.value.trim() || `Player ${+d.pl+1}`;
   save();
 });
 app.addEventListener("change", e=>{
