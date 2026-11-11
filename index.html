@@ -799,11 +799,20 @@ function reportHtml(games, forPid, career){
   };
   const keep = games.map(()=>true);
   let html = build(keep);
-  for(let k=0; k<games.length && html.length>47000; k++){ keep[k] = false; html = build(keep); }
+  const limit = MAILER ? 95000 : 47000;
+  for(let k=0; k<games.length && html.length>limit; k++){ keep[k] = false; html = build(keep); }
   return html;
 }
 
+const MAILER = { url:"https://script.google.com/macros/s/AKfycbyh3MbZoUEEioxAzvw2vdATfYbrH5AFs8S3c1Q7e99JD1_82lnlPUZdtQTxP6Tm-D3f/exec", key:"769qx9qX9g1IYu9KV0MA5uUO" };
+const canEmail = () => !!(MAILER || EMAILJS);
 async function sendEmail(to, subject, html){
+  if(MAILER){
+    const r = await fetch(MAILER.url, { method:"POST", body: JSON.stringify({ key:MAILER.key, to, subject, html }) });
+    const d = await r.json();
+    if(!d.ok) throw new Error(d.error || "send failed");
+    return;
+  }
   const r = await fetch("https://api.emailjs.com/api/v1.0/email/send", { method:"POST", headers:{ "Content-Type":"application/json" },
     body: JSON.stringify({ service_id:EMAILJS.serviceId, template_id:EMAILJS.templateId, user_id:EMAILJS.publicKey, template_params:{ to_email:to, subject, report_html:html } }) });
   if(!r.ok) throw new Error(await r.text());
@@ -821,7 +830,7 @@ async function endSession(){
   if(games.length){
     msg("Saving stats and sending emails…");
     const r = await deliver(games, null, s.id);
-    msg(r.failed.length ? `Couldn't email ${r.failed.join(", ")}` : r.sent.length ? `Results emailed to ${r.sent.join(", ")}` : EMAILJS ? "No player emails on this phone" : "Stats saved");
+    msg(r.failed.length ? `Couldn't email ${r.failed.join(", ")}` : r.sent.length ? `Results emailed to ${r.sent.join(", ")}` : canEmail() ? "No player emails on this phone" : "Stats saved");
   }
 }
 async function onlineSessionEnded(code){
@@ -1016,7 +1025,7 @@ async function deliver(games, sentRef, sid){
       let career = null; try{ career = await careerFor(key); }catch(e){}
       const flag = key.replace(/[.#$\[\]\/:]/g,"_");
       if(sentRef){ const s = await sentRef.child(flag).get(); if(s.exists()) continue; await sentRef.child(flag).set(true); }
-      if(EMAILJS && person.email){
+      if(canEmail() && person.email){
         try{ await sendEmail(person.email, `Darts results: ${games.length} game${games.length===1?"":"s"}`, reportHtml(games, key, career)); sent.push(person.name); }
         catch(e){ failed.push(person.name); }
         await sleep(1100);
