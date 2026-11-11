@@ -28,6 +28,17 @@
   --accent-dark:#3a0a55;
   --accent-tint:#211029;
   --neon:#e020f0;
+  --neon-glow:rgba(224,32,240,.7);
+  --accent-row:#2e1240;
+  --accent-shadow:#2c0642;
+  --banner:#1d0828;
+  --hl2:#ffe1ad;
+  --hl2-a50:rgba(255,225,173,.5);
+  --hl2-a20:rgba(255,225,173,.2);
+  --back-hi:#f2dcb4;
+  --back-lo:#c9a876;
+  --back-bd:#f8e8cc;
+  --back-ink:#1a1208;
   --red:#e01414;
   --red-dark:#6f0606;
   --green:#0a7a2c;
@@ -90,7 +101,7 @@ h1 .ring{width:38px;height:38px;flex:none;background:url(data:image/png;base64,i
 .big{flex:1;text-align:center;font-family:var(--display);font-weight:800;font-size:68px;line-height:1;font-variant-numeric:tabular-nums}
 .many .big{font-size:52px}
 .mid{display:flex;flex-direction:column;align-items:center;gap:4px;padding-top:4px}
-.rnd{min-width:58px;height:58px;padding:0 8px;border-radius:10px;background:linear-gradient(var(--accent-hi),var(--accent-lo));display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:42px;color:#fff;box-shadow:0 2px 0 #2c0642}
+.rnd{min-width:58px;height:58px;padding:0 8px;border-radius:10px;background:linear-gradient(var(--accent-hi),var(--accent-lo));display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:42px;color:#fff;box-shadow:0 2px 0 var(--accent-shadow)}
 .mode{font-family:var(--display);font-weight:800;font-size:18px;color:var(--gold);letter-spacing:.04em;text-align:center}
 .roundline{display:flex;justify-content:center;gap:12px;align-items:center;padding:6px;font-family:var(--display);font-weight:700;font-size:18px}
 .roundline .mode{font-size:16px}
@@ -114,8 +125,8 @@ h1 .ring{width:38px;height:38px;flex:none;background:url(data:image/png;base64,i
 .cg .mk svg{width:40px;height:40px}
 .cg .lbl{font-size:12px;color:var(--muted);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cnum{height:56px;border-radius:8px;background:linear-gradient(var(--accent-hi),var(--accent-lo));color:#fff;font-family:var(--display);font-weight:800;font-size:46px;line-height:1;
-  box-shadow:0 2px 0 #2c0642;text-shadow:0 0 8px rgba(255,255,255,.35)}
-.cmod{height:38px;border-radius:6px;background:linear-gradient(var(--accent-hi),var(--accent-lo));color:#fff;font-family:var(--display);font-weight:800;font-size:22px;box-shadow:0 2px 0 #2c0642}
+  box-shadow:0 2px 0 var(--accent-shadow);text-shadow:0 0 8px rgba(255,255,255,.35)}
+.cmod{height:38px;border-radius:6px;background:linear-gradient(var(--accent-hi),var(--accent-lo));color:#fff;font-family:var(--display);font-weight:800;font-size:22px;box-shadow:0 2px 0 var(--accent-shadow)}
 .cg button.dead{background:linear-gradient(#3a3a40,#232327);color:#5f5f68;box-shadow:none;text-shadow:none}
 .cg .pts{font-family:var(--display);font-weight:700;font-size:18px;color:var(--muted);text-align:center}
 
@@ -249,39 +260,61 @@ h1 .ring{width:38px;height:38px;flex:none;background:url(data:image/png;base64,i
 .game.wide .pad.big2 .k,.game.wide .pad.big3 .k,.game.wide .pad.p4 .k{height:clamp(76px,12vh,110px)}
 
 .bigtarget{position:sticky;top:0;z-index:3;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 10px 10px;text-align:center;
-  background:linear-gradient(180deg,#1d0828 0%,#0b0b0c 100%);border-bottom:2px solid var(--accent);box-shadow:0 6px 14px rgba(0,0,0,.6)}
+  background:linear-gradient(180deg,var(--banner) 0%,var(--bg) 100%);border-bottom:2px solid var(--accent);box-shadow:0 6px 14px rgba(0,0,0,.6)}
 .bt-label{font-family:var(--display);font-weight:600;font-size:clamp(16px,2.4vh,26px);color:var(--muted);letter-spacing:.03em}
 .bt-label b{color:#fff}
-.bt-val{font-family:var(--display);font-weight:800;font-size:clamp(64px,10.5vh,150px);line-height:.95;color:#fff;letter-spacing:.02em;text-shadow:0 0 22px rgba(224,32,240,.7)}
+.bt-val{font-family:var(--display);font-weight:800;font-size:clamp(64px,10.5vh,150px);line-height:.95;color:#fff;letter-spacing:.02em;text-shadow:0 0 22px var(--neon-glow)}
 .bt-sub{font-family:var(--display);font-weight:700;font-size:clamp(15px,2.2vh,24px);color:var(--gold);letter-spacing:.04em}
-.ht tr.cur td{font-size:30px;padding:9px 4px;background:#2e1240}
+.ht tr.cur td{font-size:30px;padding:9px 4px;background:var(--accent-row)}
 .ht tr.cur td.rt{font-size:26px;color:#fff}
 .ht tr.done td{opacity:.75}
 .game.wide .bt-val{font-size:clamp(64px,13vh,170px)}
 
 .cg .mk{display:flex;align-items:center;justify-content:center;gap:6px;height:56px}
 .cg .mk svg{height:88%;width:auto;max-height:84px;flex:none}
-.cg .mk .tm{min-width:22px;font-family:var(--display);font-weight:800;font-size:clamp(22px,3.4vh,40px);color:#ffe1ad;text-align:center}
+.cg .mk .tm{min-width:22px;font-family:var(--display);font-weight:800;font-size:clamp(22px,3.4vh,40px);color:var(--hl2);text-align:center}
 .board.fit .mk{height:100%;max-height:96px}
 .board.fit .mk svg{height:88%;width:auto;max-height:84px}
-.miss.go{background:linear-gradient(var(--accent-hi),var(--accent-lo));box-shadow:0 0 0 3px #ffe1ad,0 0 16px rgba(255,225,173,.5);animation:gopulse 1.2s ease-in-out infinite}
-@keyframes gopulse{50%{box-shadow:0 0 0 3px #ffe1ad,0 0 4px rgba(255,225,173,.2)}}
+.miss.go{background:linear-gradient(var(--accent-hi),var(--accent-lo));box-shadow:0 0 0 3px var(--hl2),0 0 16px var(--hl2-a50);animation:gopulse 1.2s ease-in-out infinite}
+@keyframes gopulse{50%{box-shadow:0 0 0 3px var(--hl2),0 0 4px var(--hl2-a20)}}
 @media (prefers-reduced-motion:reduce){.miss.go{animation:none}}
 
 .pad .k.op{background:linear-gradient(#3b3b42,#1d1d21);color:#fff;border-color:#55555e;font-size:38px}
-.pad .k.clr{background:linear-gradient(#3b3b42,#1d1d21);color:#ffe1ad;border-color:#55555e}
+.pad .k.clr{background:linear-gradient(#3b3b42,#1d1d21);color:var(--hl2);border-color:#55555e}
 .pad .k:disabled{opacity:.35}
 .pad .q:disabled{opacity:.25}
-.disp .calceq{color:#ffe1ad}
+.disp .calceq{color:var(--hl2)}
 .calcline{font-size:24px;font-weight:800;color:#fff;text-align:center;padding:2px 8px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;unicode-bidi:plaintext}
 .miss.ent{background:linear-gradient(#0d8a34,#05521d);border-color:#0d8a34}
 .big .prev{color:var(--accent)}
-.side:not(.active) .big .prev{color:#ffe1ad}
+.side:not(.active) .big .prev{color:var(--hl2)}
 
 /* tablets: larger column names over the boards */
 @media (min-width:700px){ .ht th{font-size:17px} .cg .lbl{font-size:16px} }
 @media (min-width:700px) and (min-height:600px){ .ov .sheet:not(.wide):not(.rules){max-width:440px;transform:scale(1.1)} }
 @media (min-width:700px) and (min-height:900px){ .ov .sheet:not(.wide):not(.rules){transform:scale(1.25)} }
+
+/* settings */
+.gear{display:inline-flex;align-items:center;gap:6px}
+.gear svg{width:18px;height:18px}
+.row h1{white-space:nowrap}
+@media (max-width:520px){ .row h1{font-size:30px} .gear .gl{display:none} .gear{padding:10px} .gear svg{width:22px;height:22px} }
+.themes{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.theme{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:12px;border-radius:12px;background:var(--panel);border:2px solid var(--line);text-align:left;font-weight:700}
+.theme.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.theme .sws{display:flex;gap:6px}
+.theme .sw{width:26px;height:26px;border-radius:50%;border:1px solid rgba(255,255,255,.25)}
+.theme small{font-weight:500;color:var(--muted);font-size:12px}
+.tpick{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.tpick input[type=color]{width:64px;height:44px;border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:2px}
+.tprev{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:stretch}
+.tprev .pc{background:#ececec;border-radius:8px;overflow:hidden;text-align:center}
+.tprev .pc b{display:block;background:var(--accent);color:#fff;font-family:var(--display);font-size:20px;padding:2px}
+.tprev .pc span{display:block;color:var(--accent);font-family:var(--display);font-weight:800;font-size:44px;line-height:1.1}
+.tprev .pm{display:flex;align-items:center;justify-content:center;gap:6px;background:var(--bg);border:1px solid var(--line);border-radius:8px}
+.tprev .pm svg{width:46px;height:46px}
+.tprev .pm .cn{width:52px;height:46px;border-radius:8px;background:linear-gradient(var(--accent-hi),var(--accent-lo));display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:30px;color:#fff;box-shadow:0 2px 0 var(--accent-shadow)}
+.tprev .back,.tprev .primary{width:100%}
 
 /* bar + entry + keypad */
 .bar{display:grid;grid-template-columns:44px 1fr auto 44px;align-items:center;gap:8px;margin:0 6px;padding:6px 8px;border-radius:10px 10px 0 0;background:linear-gradient(var(--accent),var(--accent-lo))}
@@ -290,7 +323,7 @@ h1 .ring{width:38px;height:38px;flex:none;background:url(data:image/png;base64,i
 .bar .bs{font-family:var(--display);font-weight:800;font-size:22px;color:#fff;font-variant-numeric:tabular-nums}
 .dock{margin:0 6px 6px;background:#2b2b30;padding:6px;display:flex;flex-direction:column;gap:6px;border-radius:0 0 10px 10px}
 .entry{display:grid;grid-template-columns:1fr 2.2fr 1fr;gap:6px}
-.back{height:58px;border-radius:6px;background:linear-gradient(#f2dcb4,#c9a876);color:#1a1208;font-family:var(--display);font-weight:800;font-size:26px;border:1px solid #f8e8cc}
+.back{height:58px;border-radius:6px;background:linear-gradient(var(--back-hi),var(--back-lo));color:var(--back-ink);font-family:var(--display);font-weight:800;font-size:26px;border:1px solid var(--back-bd)}
 .miss{height:58px;border-radius:6px;background:linear-gradient(#b80f0f,#6a0505);color:#fff;font-family:var(--display);font-weight:800;font-size:26px;border:1px solid #e01414}
 .disp{height:58px;border-radius:6px;background:#000;border:1px solid #5a5a62;display:flex;align-items:center;justify-content:center;gap:8px;padding:0 8px;overflow:hidden;
   font-family:var(--display);font-weight:700;font-size:30px;color:var(--gold);font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -1134,7 +1167,7 @@ function renderHome(){
   const resumable = match && !(match.over && match.over.type==="match") && !online;
   const so = savedOnline(), s = loadLocalSession();
   app.innerHTML = `<div class="wrap narrow">
-    <div class="row"><h1><span class="ring" aria-hidden="true"></span>Darts Scorer</h1><button type="button" class="ghost small" data-act="logout">Log out</button></div>
+    <div class="row"><h1><span class="ring" aria-hidden="true"></span>Darts Scorer</h1><span class="row" style="gap:8px">${gearBtn()}<button type="button" class="ghost small" data-act="logout">Log out</button></span></div>
     <div class="hint">Logged in as <b>${esc(account ? account.name : "")}</b> · ${esc(user ? user.email : "")}</div>
     ${resumable ? `<div class="card resume"><strong>Match in progress</strong><div class="hint">${esc(match.players.map(p=>p.name).join(" vs "))} · ${esc(gameName(match.base||match.game, match.opts))}</div>
       <button type="button" class="secondary" data-act="resume">Resume match</button></div>` : ""}
@@ -1805,7 +1838,7 @@ function renderSetup(){
   if(settings.game==="medley" && (settings.legs<3 || settings.legs%2===0)) settings.legs = Math.max(3, settings.legs|1);
   const s = settings, resumable = match && !(match.over && match.over.type==="match");
   app.innerHTML = `<div class="wrap">
-    ${profilesOn() ? `<div class="row"><button type="button" class="ghost small" data-act="home">‹ Home</button><span class="chip">${mode==="online" ? "Playing online" : "Playing local"}</span></div>` : `<h1><span class="ring" aria-hidden="true"></span>Darts Scorer</h1>`}
+    ${profilesOn() ? `<div class="row"><button type="button" class="ghost small" data-act="home">‹ Home</button><span class="chip">${mode==="online" ? "Playing online" : "Playing local"}</span></div>` : `<div class="row"><h1><span class="ring" aria-hidden="true"></span>Darts Scorer</h1>${gearBtn()}</div>`}
     ${resumable && !profilesOn() ? `<div class="card resume"><strong>Match in progress</strong>
       <div class="hint">${esc(match.players.map(p=>p.name).join(" vs "))} · ${esc(gameName(match.base||match.game, match.opts))}</div>
       <button type="button" class="secondary" data-act="resume">Resume match</button></div>` : ""}
@@ -1862,9 +1895,9 @@ function renderSetup(){
 /* ---------- render: game ---------- */
 const MARK = [
   "",
-  `<svg viewBox="0 0 40 40" aria-label="1 mark"><path d="M7 35 L33 5" stroke="#ffe1ad" stroke-width="4.5" stroke-linecap="round"/></svg>`,
-  `<svg viewBox="0 0 40 40" aria-label="2 marks"><path d="M7 35 L33 5 M7 5 L33 35" stroke="#ffe1ad" stroke-width="4.5" stroke-linecap="round"/></svg>`,
-  `<svg viewBox="0 0 40 40" aria-label="closed"><ellipse cx="20" cy="20" rx="15.5" ry="15" fill="none" stroke="#ffe1ad" stroke-width="4.5"/></svg>`
+  `<svg viewBox="0 0 40 40" aria-label="1 mark"><path d="M7 35 L33 5" style="stroke:var(--hl2)" stroke-width="4.5" stroke-linecap="round"/></svg>`,
+  `<svg viewBox="0 0 40 40" aria-label="2 marks"><path d="M7 35 L33 5 M7 5 L33 35" style="stroke:var(--hl2)" stroke-width="4.5" stroke-linecap="round"/></svg>`,
+  `<svg viewBox="0 0 40 40" aria-label="closed"><ellipse cx="20" cy="20" rx="15.5" ry="15" fill="none" style="stroke:var(--hl2)" stroke-width="4.5"/></svg>`
 ];
 function modeText(){
   const o = match.opts;
@@ -2012,6 +2045,84 @@ function calcRows(q, k, dis, wide){
        ${q(57,true)}<button type="button" class="k clr" data-op="C" ${dis}>C</button><button type="button" class="enter" data-act="enter">ENTER</button>${q(95,true)}`
     : `${q(43)}<button type="button" class="k g" data-score="100" ${dis}>100</button><button type="button" class="k r" data-score="180" ${dis}>180</button><button type="button" class="k g" data-score="140" ${dis}>140</button>${q(85)}
        ${q(57)}${k(0)}<button type="button" class="enter" data-act="enter" disabled>ENTER</button>${q(95)}`;
+}
+/* ---------- colour themes (saved per device) ---------- */
+const THEME_KEY = "dartsScorer.theme";
+const THEMES = [
+  { id:"icon",   name:"Neon Purple",  note:"Matches the app icon", accent:"#9b22d6", hl:"#f0d4a4", bg:"#0b0b0c", neon:"#e020f0" },
+  { id:"classic",name:"Classic Red",  note:"Red and yellow",       accent:"#c8102e", hl:"#ffd60a", bg:"#0b0b0c" },
+  { id:"pub",    name:"Pub Green",    note:"Green and brass",      accent:"#0e7f45", hl:"#f2d16b", bg:"#0a0d0b" },
+  { id:"ocean",  name:"Ocean Blue",   note:"Blue and ice",         accent:"#1f63c4", hl:"#8be6ff", bg:"#090c12" },
+  { id:"sunset", name:"Sunset",       note:"Orange and gold",      accent:"#d2551a", hl:"#ffd166", bg:"#0e0a08" },
+  { id:"pink",   name:"Hot Pink",     note:"Pink and white",       accent:"#d01f78", hl:"#ffd6ea", bg:"#0d0a0c" },
+  { id:"gold",   name:"Gold Rush",    note:"Gold and black",       accent:"#a87a08", hl:"#ffe27a", bg:"#0c0b08" },
+  { id:"steel",  name:"Steel",        note:"Slate and white",      accent:"#4a5c7a", hl:"#ffffff", bg:"#0a0b0d" }
+];
+const hexRGB = h=>{ h = String(h||"#000").replace("#",""); if(h.length===3) h = h.split("").map(c=>c+c).join(""); return [0,2,4].map(i=>parseInt(h.substr(i,2),16)||0); };
+const mixHex = (a,b,t)=>{ const A = hexRGB(a), B = hexRGB(b); return "#"+A.map((v,i)=>Math.round(v*t + B[i]*(1-t)).toString(16).padStart(2,"0")).join(""); };
+const rgbaHex = (a,al)=>`rgba(${hexRGB(a).join(",")},${al})`;
+const lumHex = h=>{ const [r,g,b] = hexRGB(h).map(v=>{ v/=255; return v<=.03928 ? v/12.92 : Math.pow((v+.055)/1.055,2.4); }); return .2126*r+.7152*g+.0722*b; };
+function loadTheme(){ try{ return JSON.parse(localStorage.getItem(THEME_KEY) || "null") || { preset:"icon" }; }catch(e){ return { preset:"icon" }; } }
+let theme = loadTheme();
+function themeColors(t){
+  const p = THEMES.find(x=>x.id===t.preset);
+  if(p) return p;
+  const c = t.custom || {}, base = THEMES[0];
+  return { accent:c.accent||base.accent, hl:c.hl||base.hl, bg:c.bg||base.bg };
+}
+function applyTheme(){
+  const c = themeColors(theme), A = c.accent, H = c.hl, B = c.bg, N = c.neon || mixHex(A,"#ffffff",.7);
+  const hl2 = mixHex(H,"#ffffff",.75);
+  const v = {
+    "--bg":B,
+    "--panel":mixHex(A, mixHex("#ffffff",B,.055), .05),
+    "--panel-2":mixHex(A, mixHex("#ffffff",B,.13), .07),
+    "--line":mixHex(A, mixHex("#ffffff",B,.2), .08),
+    "--accent":A, "--accent-hi":mixHex(A,"#ffffff",.82), "--accent-lo":mixHex(A,"#000000",.58),
+    "--accent-dark":mixHex(A,"#000000",.4), "--accent-tint":mixHex(A,B,.13), "--accent-row":mixHex(A,B,.24),
+    "--accent-shadow":mixHex(A,"#000000",.28), "--banner":mixHex(A,B,.15),
+    "--neon":N, "--neon-glow":rgbaHex(N,.7),
+    "--gold":H, "--hl2":hl2, "--hl2-a50":rgbaHex(hl2,.5), "--hl2-a20":rgbaHex(hl2,.2),
+    "--back-hi":mixHex(H,"#ffffff",.85), "--back-lo":mixHex(H,"#000000",.8), "--back-bd":mixHex(H,"#ffffff",.55),
+    "--back-ink": lumHex(H) > .35 ? "#16110a" : "#ffffff"
+  };
+  const st = document.documentElement.style;
+  Object.keys(v).forEach(k=>st.setProperty(k, v[k]));
+  const m = document.querySelector('meta[name="theme-color"]'); if(m) m.setAttribute("content", B);
+}
+function saveTheme(){ try{ localStorage.setItem(THEME_KEY, JSON.stringify(theme)); }catch(e){} applyTheme(); }
+applyTheme();
+let settingsFrom = "setup";
+const GEAR = `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>`;
+const gearBtn = ()=>`<button type="button" class="ghost small gear" data-act="settings" aria-label="Settings">${GEAR}<span class="gl">Settings</span></button>`;
+function renderSettings(){
+  const c = themeColors(theme), custom = theme.preset==="custom";
+  const sw = t=>`<span class="sws"><span class="sw" style="background:${t.accent}"></span><span class="sw" style="background:${t.hl}"></span><span class="sw" style="background:${t.bg}"></span></span>`;
+  app.innerHTML = `<div class="wrap narrow">
+    <div class="row"><button type="button" class="ghost small" data-act="settingsBack">‹ Back</button><span class="chip">Saved on this device</span></div>
+    <h1>${GEAR.replace('<svg','<svg style="width:32px;height:32px"')}Settings</h1>
+    <div class="label">Colour scheme</div>
+    <div class="themes">
+      ${THEMES.map(t=>`<button type="button" class="theme ${theme.preset===t.id?"on":""}" data-theme="${t.id}">${sw(t)}<span>${esc(t.name)}</span><small>${esc(t.note)}</small></button>`).join("")}
+      <button type="button" class="theme ${custom?"on":""}" data-theme="custom">${sw(c)}<span>Custom</span><small>Pick your own colours</small></button>
+    </div>
+    <div class="card">
+      <strong>${custom ? "Your colours" : "Make your own"}</strong>
+      <div class="hint">Changing any colour switches to Custom. It starts from the scheme you have now.</div>
+      <label class="tpick"><span>Main colour<br><small class="hint">Bars, buttons, active player</small></span><input type="color" data-tc="accent" value="${c.accent}"></label>
+      <label class="tpick"><span>Highlight colour<br><small class="hint">Cricket marks, totals, BACK</small></span><input type="color" data-tc="hl" value="${c.hl}"></label>
+      <label class="tpick"><span>Background<br><small class="hint">Keep it dark for the best contrast</small></span><input type="color" data-tc="bg" value="${c.bg}"></label>
+      <div class="hint" id="tcwarn">${lumHex(c.accent) > .4 ? "This main colour is very light, so white text on it may be hard to read." : ""}</div>
+    </div>
+    <div class="label">Preview</div>
+    <div class="tprev">
+      <div class="pc"><b>Player 1</b><span>501</span></div>
+      <div class="pm"><div class="cn">20</div>${MARK[3]}</div>
+      <button type="button" class="back" tabindex="-1">BACK</button>
+      <button type="button" class="primary" tabindex="-1">START</button>
+    </div>
+    <button type="button" class="ghost" data-act="themeReset">Reset to Neon Purple</button>
+  </div>`;
 }
 function render01Dock(){
   const p = match.leg.p[match.cur], dbl = match.opts.outMode==="double";
@@ -2394,6 +2505,7 @@ function render(){
   else if(screen==="auth") renderAuth();
   else if(screen==="home" && profilesOn()) renderHome();
   else if(screen==="players" && profilesOn()) renderPlayers();
+  else if(screen==="settings") renderSettings();
   else renderSetup();
 }
 
@@ -2401,6 +2513,15 @@ function render(){
 app.addEventListener("click", e=>{
   const b = e.target.closest("button"); if(!b || b.disabled) return;
   const d = b.dataset;
+  if(d.theme!==undefined){
+    if(d.theme==="custom"){ if(theme.preset!=="custom") theme = { preset:"custom", custom:{...themeColors(theme)} }; }
+    else theme = { preset:d.theme, custom:theme.custom };
+    if(theme.custom) delete theme.custom.neon, delete theme.custom.id, delete theme.custom.name, delete theme.custom.note;
+    saveTheme(); render(); return;
+  }
+  if(d.act==="settings"){ settingsFrom = screen; screen = "settings"; window.scrollTo(0,0); render(); return; }
+  if(d.act==="settingsBack"){ screen = settingsFrom==="settings" ? "setup" : settingsFrom; render(); return; }
+  if(d.act==="themeReset"){ theme = { preset:"icon" }; saveTheme(); render(); return; }
   if(d.claim!==undefined){
     const i = +d.claim;
     if(dialog==="join" && joinState){
@@ -2507,6 +2628,14 @@ app.addEventListener("click", e=>{
 });
 app.addEventListener("input", e=>{
   const t = e.target, d = t.dataset;
+  if(d.tc!==undefined){
+    if(theme.preset!=="custom"){ const c = themeColors(theme); theme = { preset:"custom", custom:{ accent:c.accent, hl:c.hl, bg:c.bg } }; }
+    theme.custom[d.tc] = t.value; saveTheme();
+    app.querySelectorAll(".theme").forEach(x=>x.classList.toggle("on", x.dataset.theme==="custom"));
+    const cs = app.querySelector('.theme[data-theme="custom"] .sws'); if(cs){ const k = ["accent","hl","bg"]; cs.querySelectorAll(".sw").forEach((x,i)=>x.style.background = theme.custom[k[i]]); }
+    const w = app.querySelector("#tcwarn"); if(w) w.textContent = lumHex(theme.custom.accent) > .4 ? "This main colour is very light, so white text on it may be hard to read." : "";
+    return;
+  }
   if(d.pl===undefined) return;
   settings.players[+d.pl] = t.value;
   const chip = app.querySelector(`.seg.first button[data-val="${d.pl}"]`); if(chip) chip.textContent = t.value.trim() || `Player ${+d.pl+1}`;
