@@ -33,6 +33,11 @@ which simply loads this site, so pushing to `main` updates the Android app too.
 - Online play: `hostOnline`, `lookupGame`, `confirmJoin`, `pushState`, `listen`, `isMyTurn`, `claims`.
 - Accounts and sessions: `startAuth`, `people()`, `deliver()` (saves history + sends emails), `endSession`.
 
+## Ryan's preferences (already implemented)
+- Turns never end on their own after the 3rd dart. The player taps END TURN. A 4th dart is blocked. Exceptions: a winning dart, or a player knocked out mid-turn in Killer.
+- Who throws first is chosen at setup and on Rematch (a player, a bull-off, or random).
+- The app is used on a wall-mounted tablet next to the board, so key info must be readable from the oche: big target banner in round games, big yellow cricket marks.
+
 ## Ryan's house rules (already implemented)
 - Killer:
   - Throw for numbers (1–20 or Bull). Hits build lives; going over the max = out.
