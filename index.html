@@ -241,6 +241,17 @@ h1 .ring{width:38px;height:38px;flex:none;background:url(data:image/png;base64,i
 .game.wide .pad button{height:clamp(50px,7.2vh,66px)}
 .game.wide .pad.big2 .k,.game.wide .pad.big3 .k,.game.wide .pad.p4 .k{height:clamp(76px,12vh,110px)}
 
+.bigtarget{position:sticky;top:0;z-index:3;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 10px 10px;text-align:center;
+  background:linear-gradient(180deg,#24090f 0%,#0b0b0c 100%);border-bottom:2px solid var(--red);box-shadow:0 6px 14px rgba(0,0,0,.6)}
+.bt-label{font-family:var(--display);font-weight:600;font-size:clamp(16px,2.4vh,26px);color:var(--muted);letter-spacing:.03em}
+.bt-label b{color:#fff}
+.bt-val{font-family:var(--display);font-weight:800;font-size:clamp(64px,10.5vh,150px);line-height:.95;color:#fff;letter-spacing:.02em;text-shadow:0 0 22px rgba(200,16,46,.75)}
+.bt-sub{font-family:var(--display);font-weight:700;font-size:clamp(15px,2.2vh,24px);color:var(--gold);letter-spacing:.04em}
+.ht tr.cur td{font-size:30px;padding:9px 4px;background:#3a0d16}
+.ht tr.cur td.rt{font-size:26px;color:#fff}
+.ht tr.done td{opacity:.75}
+.game.wide .bt-val{font-size:clamp(64px,13vh,170px)}
+
 /* bar + entry + keypad */
 .bar{display:grid;grid-template-columns:44px 1fr auto 44px;align-items:center;gap:8px;margin:0 6px;padding:6px 8px;border-radius:10px 10px 0 0;background:linear-gradient(#c8102e,#8e0b1f)}
 .bar .ib{width:36px;height:34px;border-radius:6px;display:grid;place-items:center;font-size:20px;font-weight:700;background:rgba(0,0,0,.25);color:#fff}
@@ -2068,6 +2079,35 @@ function renderKillerDock(){
   }
   return renderCricketDock();
 }
+/* big "what are we shooting at" banner, readable from the oche */
+function bigTarget(){
+  if(!match || match.over) return "";
+  const g = match.game, name = esc(match.players[match.cur].name);
+  const bl = n => n===25 ? "BULL" : String(n);
+  let label = "", val = "", sub = "";
+  if(g==="halveit"){
+    const t = halveTarget(); label = `Round ${match.leg.round+1} of 12`;
+    if(typeof t==="number"){ val = String(t); sub = "Singles, doubles and triples count"; }
+    else if(t==="EVEN"){ val = "EVEN"; sub = "3-dart total must be even"; }
+    else if(t==="ODD"){ val = "ODD"; sub = "3-dart total must be odd"; }
+    else if(t==="TRIPLE"){ val = "TRIPLE"; sub = "Any triple counts"; }
+    else if(t==="DOUBLE"){ val = "DOUBLE"; sub = "Any double counts"; }
+    else if(t==="CHOICE"){ val = match.choice ? bl(match.choice) : "CHOICE"; sub = match.choice ? "Called number" : "Call your number"; }
+    else if(t==="BULL"){ val = "BULL"; sub = "25 or 50"; }
+  } else if(isRG(g)){
+    const t = rgTarget(), r = rgRounds();
+    if(g==="shanghai"){ label = `Round ${roundNo()} of ${r.length}`; val = bl(t); sub = "Single + double + triple = Shanghai"; }
+    else if(g==="baseball"){ label = `Inning ${roundNo()} of 9`; val = bl(t); sub = "Single 1 run · Double 2 · Triple 3"; }
+    else if(g==="golf"){ label = `Hole ${roundNo()} of 9`; val = bl(t); sub = "Double 1 · Triple 2 · Single 3 · Miss 5"; }
+    else if(g==="hammer"){ const k = Math.min(match.leg.round, r.length-1), last = k===r.length-1;
+      label = `Round ${k+1} of ${r.length}${match.hWild[k] ? " · Wild" : ""}`; val = bl(t); sub = last ? "Final round: ×1 · ×3 · ×5" : "Darts score ×1 · ×2 · ×3"; }
+    else if(g==="atc"){ const pos = match.leg.p[match.cur].pos; label = `Around the Clock`; val = bl(t);
+      sub = pos+1 < ATC_T.length ? `Then ${bl(ATC_T[pos+1])}` : "Last one!"; }
+    else if(g==="bobs"){ const v = t===25 ? 50 : 2*t; label = `Round ${roundNo()} of ${r.length}`; val = t===25 ? "D-BULL" : "D"+t; sub = `Hits add ${v} · full miss loses ${v}`; }
+    else if(g==="countup"){ label = `Round ${roundNo()} of ${r.length}`; val = "ANY"; sub = "Score as much as you can"; }
+  } else return "";
+  return `<div class="bigtarget" aria-live="polite"><div class="bt-label"><b>${name}</b> · ${esc(label)}</div><div class="bt-val">${esc(val)}</div>${sub ? `<div class="bt-sub">${esc(sub)}</div>` : ""}</div>`;
+}
 function renderHalveBoard(){
   const L = match.leg, n = match.players.length;
   const head = `<tr><th class="rt">Target</th>${match.players.map((pl,i)=>`<th class="${i===match.cur&&!match.over?"on":""}">${esc(pl.name)}</th>`).join("")}</tr>`;
@@ -2081,7 +2121,7 @@ function renderHalveBoard(){
     }).join("");
     return `<tr class="${cur?"cur":""} ${r<L.round?"done":""}" ${cur?'id="hcur"':""}><td class="rt">${halveLabel(t)}</td>${cells}</tr>`;
   }).join("");
-  return `<table class="ht">${head}${rows}</table>`;
+  return `${bigTarget()}<table class="ht">${head}${rows}</table>`;
 }
 function renderHalveDock(){
   const t = halveTarget(), dis = match.over ? "disabled" : "";
@@ -2138,7 +2178,7 @@ function renderHalveDock(){
 function renderRGBoard(){
   const L = match.leg, g = match.game;
   if(g==="atc"){
-    return `<div class="atc">${match.players.map((pl,i)=>{
+    return `${bigTarget()}<div class="atc">${match.players.map((pl,i)=>{
       const P = L.p[i], on = i===match.cur && !match.over;
       return `<div class="pr ${on?"on":""}"><div class="pn">${esc(pl.name)} · ${P.darts} darts</div><div class="chips">${ATC_T.map((t,k)=>
         `<span class="c ${k<P.pos?"done":k===P.pos?"next":""}">${t===25?"B":t}</span>`).join("")}</div></div>`;
@@ -2156,7 +2196,7 @@ function renderRGBoard(){
     return `<tr class="${cur?"cur":""}" ${cur?'id="hcur"':""}><td class="rt">${rgRowLabel(t, r)}</td>${cells}</tr>`;
   }).join("");
   const start = g==="bobs" ? `<tr><td class="rt">Start</td>${L.p.map(()=>`<td>27</td>`).join("")}</tr>` : "";
-  return `<table class="ht">${head}${start}${rows}</table>`;
+  return `${bigTarget()}<table class="ht">${head}${start}${rows}</table>`;
 }
 function renderRGDock(){
   const g = match.game, t = rgTarget(), dis = match.over ? "disabled" : "";
@@ -2240,7 +2280,7 @@ function renderGame(){
   app.innerHTML = `<div class="game">${kil ? `<div class="roundline"><span>${L_round()}</span><span class="mode">${modeText()}</span></div>` : renderHeader()}
     <div class="board ${isCricket(match.game) ? "fit" : ""}" id="board">${x01 ? render01Board() : kil ? renderKillerBoard() : hv ? renderHalveBoard() : rg ? renderRGBoard() : renderCricketBoard()}</div>
     ${renderBar()}${x01 ? render01Dock() : kil ? renderKillerDock() : hv ? renderHalveDock() : rg ? renderRGDock() : renderCricketDock()}</div>${renderOverlay()}`;
-  if(hv || rg){ const c = document.getElementById("hcur"), b = document.getElementById("board"); if(c && b) b.scrollTop = c.offsetTop - b.clientHeight/2 + c.offsetHeight/2; }
+  if(hv || rg){ const c = document.getElementById("hcur"), b = document.getElementById("board"); if(c && b){ const bt = b.querySelector(".bigtarget"), off = bt ? bt.offsetHeight : 0; b.scrollTop = c.offsetTop - off - (b.clientHeight-off)/2 + c.offsetHeight/2; } }
   if(x01){ const b = document.getElementById("board"); b.scrollTop = b.scrollHeight; }
 }
 /* scale the game screen to fill tablets and unfolded phones */
