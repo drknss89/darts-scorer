@@ -252,6 +252,15 @@ h1 .ring{width:38px;height:38px;flex:none;background:url(data:image/png;base64,i
 .ht tr.done td{opacity:.75}
 .game.wide .bt-val{font-size:clamp(64px,13vh,170px)}
 
+.cg .mk{display:flex;align-items:center;justify-content:center;gap:6px;height:56px}
+.cg .mk svg{height:88%;width:auto;max-height:84px;flex:none}
+.cg .mk .tm{min-width:22px;font-family:var(--display);font-weight:800;font-size:clamp(22px,3.4vh,40px);color:#ffd60a;text-align:center}
+.board.fit .mk{height:100%;max-height:96px}
+.board.fit .mk svg{height:88%;width:auto;max-height:84px}
+.miss.go{background:linear-gradient(#d4142f,#8e0b1f);box-shadow:0 0 0 3px #ffd60a,0 0 16px rgba(255,214,10,.5);animation:gopulse 1.2s ease-in-out infinite}
+@keyframes gopulse{50%{box-shadow:0 0 0 3px #ffd60a,0 0 4px rgba(255,214,10,.2)}}
+@media (prefers-reduced-motion:reduce){.miss.go{animation:none}}
+
 /* bar + entry + keypad */
 .bar{display:grid;grid-template-columns:44px 1fr auto 44px;align-items:center;gap:8px;margin:0 6px;padding:6px 8px;border-radius:10px 10px 0 0;background:linear-gradient(#c8102e,#8e0b1f)}
 .bar .ib{width:36px;height:34px;border-radius:6px;display:grid;place-items:center;font-size:20px;font-weight:700;background:rgba(0,0,0,.25);color:#fff}
@@ -1274,6 +1283,7 @@ function reuseNumbers(){
 }
 function killerDart(n, m){
   if(!match || match.over || match.leg.phase!=="play") return;
+  if(match.turn.length>=3){ msg("All 3 darts are in. Tap END TURN."); render(); return; }
   snapshot();
   const L = match.leg, idx = match.cur, p = L.p[idx], max = match.opts.lives;
   p.darts++;
@@ -1301,10 +1311,7 @@ function killerDart(n, m){
     const w = alive[0];
     p.turns++; p.last = match.turn.map(d=>dartLabel(d.n,d.m)); tl({ k:"ki", p:idx, d:p.last });
     endLeg(w, { darts:L.p[w].darts });
-  } else if(p.out || match.turn.length>=3){
-    p.turns++; p.last = match.turn.map(d=>dartLabel(d.n,d.m)); tl({ k:"ki", p:idx, d:p.last });
-    match.turn = []; nextPlayer();
-  }
+  } else if(p.out) killerEndTurn();
   save(); render();
 }
 
@@ -1353,6 +1360,7 @@ function finish(darts){
 /* cricket: dart-by-dart */
 function throwDart(n, m){
   if(!match || match.over) return;
+  if(match.turn.length>=3){ msg("All 3 darts are in. Tap END TURN."); render(); return; }
   snapshot();
   const L = match.leg, idx = match.cur, p = L.p[idx];
   p.darts++;
@@ -1373,7 +1381,6 @@ function throwDart(n, m){
   }
   match.turn.push({n, m, counted});
   if(win){ p.turns++; p.last = cricketSummary(); tl({ k:"cr", p:idx, marks:match.turnMarks, d:p.last.darts, pts:L.p.map(q=>q.points) }); endLeg(idx, { darts:p.darts }); }
-  else if(match.turn.length>=3) endCricketTurn();
   save(); render();
 }
 /* halve-it */
@@ -1399,6 +1406,7 @@ function pickChoice(n){
 }
 function halveDart(n, m){
   if(!match || match.over) return;
+  if(match.turn.length>=3){ msg("All 3 darts are in. Tap END TURN."); render(); return; }
   const t = halveTarget();
   if(t==="CHOICE" && !match.choice) return;
   snapshot();
@@ -1407,7 +1415,6 @@ function halveDart(n, m){
   const d = { n, m };
   d.counted = t==="EVEN" || t==="ODD" ? n>0 : dartCounts(d, t, match.choice);
   match.turn.push(d);
-  if(match.turn.length>=3) endHalveTurn();
   mod = 1; save(); render();
 }
 function halveTotal(v){
@@ -1469,6 +1476,7 @@ function rgRowLabel(t, r){
 const GOLF = { 2:{v:1,l:"Double",s:"Dbl"}, 3:{v:2,l:"Triple",s:"Trp"}, 1:{v:3,l:"Single",s:"Sgl"}, 0:{v:5,l:"Miss",s:"Miss"} };
 function rgDart(n, m){
   if(!match || match.over) return;
+  if(match.turn.length>=3){ msg("All 3 darts are in. Tap END TURN."); render(); return; }
   const g = match.game, L = match.leg, idx = match.cur, p = L.p[idx];
   snapshot();
   p.darts++;
@@ -1486,7 +1494,6 @@ function rgDart(n, m){
   } else {
     match.turn.push({ n, m:m||1, counted:n===t && n>0 });
   }
-  if(match.turn.length>=3) rgEndTurn();
   save(); render();
 }
 function rgEndTurn(override){
@@ -1534,8 +1541,10 @@ function hammerMult(k){ const last = match.leg.round>=match.hTargets.length-1; r
 function rgRest(){
   if(!match || match.over) return;
   if(match.game==="golf"){ if(match.turn.length){ snapshot(); rgEndTurn(); save(); render(); } return; }
-  const left = 3 - match.turn.length;
-  for(let k=0;k<left;k++) rgDart(0,0);
+  const who = match.cur;
+  while(match.cur===who && match.turn.length<3 && !match.over){ const before = match.turn.length; rgDart(0,0); if(match.turn.length===before) break; }
+  if(match.over || match.cur!==who || !match.turn.length) return;
+  snapshot(); rgEndTurn(); save(); render();
 }
 function bobsHits(h){
   if(!match || match.over) return;
@@ -1580,10 +1589,19 @@ function endCricketTurn(){
   if(match.turnMarks>=5) toast(match.turnMarks+" marks!");
   match.turn = []; match.turnMarks = 0; nextPlayer();
 }
+function killerEndTurn(){
+  const p = match.leg.p[match.cur];
+  p.turns++; p.last = match.turn.map(d=>dartLabel(d.n,d.m)); tl({ k:"ki", p:match.cur, d:p.last });
+  match.turn = []; nextPlayer();
+}
 function cricketRest(){
   if(!match || match.over) return;
-  const left = 3 - match.turn.length, fn = match.game==="killer" ? killerDart : match.game==="halveit" ? halveDart : throwDart;
-  for(let k=0;k<left;k++) fn(0,1);
+  const g = match.game, fn = g==="killer" ? killerDart : g==="halveit" ? halveDart : throwDart, who = match.cur;
+  while(match.cur===who && match.turn.length<3 && !match.over){ const before = match.turn.length; fn(0,1); if(match.turn.length===before) break; }
+  if(match.over || match.cur!==who || !match.turn.length) return;
+  snapshot();
+  if(g==="killer") killerEndTurn(); else if(g==="halveit") endHalveTurn(); else endCricketTurn();
+  save(); render();
 }
 
 /* legs, sets, match */
@@ -1822,9 +1840,9 @@ function renderSetup(){
 /* ---------- render: game ---------- */
 const MARK = [
   "",
-  `<svg viewBox="0 0 30 30" aria-label="1 mark"><path d="M8 23 L22 7" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/></svg>`,
-  `<svg viewBox="0 0 30 30" aria-label="2 marks"><path d="M8 23 L22 7 M8 7 L22 23" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/></svg>`,
-  `<svg viewBox="0 0 30 30" aria-label="closed"><circle cx="15" cy="15" r="12.5" fill="none" stroke="#2ecc71" stroke-width="3"/><path d="M9.5 20.5 L20.5 9.5 M9.5 9.5 L20.5 20.5" stroke="#2ecc71" stroke-width="3.4" stroke-linecap="round"/></svg>`
+  `<svg viewBox="0 0 40 40" aria-label="1 mark"><path d="M7 35 L33 5" stroke="#ffd60a" stroke-width="4.5" stroke-linecap="round"/></svg>`,
+  `<svg viewBox="0 0 40 40" aria-label="2 marks"><path d="M7 35 L33 5 M7 5 L33 35" stroke="#ffd60a" stroke-width="4.5" stroke-linecap="round"/></svg>`,
+  `<svg viewBox="0 0 40 40" aria-label="closed"><ellipse cx="20" cy="20" rx="15.5" ry="15" fill="none" stroke="#ffd60a" stroke-width="4.5"/></svg>`
 ];
 function modeText(){
   const o = match.opts;
@@ -1901,17 +1919,17 @@ function renderCricketBoard(){
     html += left.map(i=>`<div class="lbl">${esc(match.players[i].name)}</div>`).join("") + `<div></div><div></div><div></div>` +
             right.map(i=>`<div class="lbl">${esc(match.players[i].name)}</div>`).join("");
   }
+  const turnHits = {}; match.turn.forEach(d=>{ if(TARGETS.includes(d.n)) turnHits[d.n] = (turnHits[d.n]||0) + d.m; });
   for(const t of TARGETS){
     const dead = L.p.every(p=>p.marks[t]===3) ? "dead" : "";
-    html += left.map(i=>`<div class="mk ${dead}">${MARK[L.p[i].marks[t]]}</div>`).join("");
+    const tm = i => i===match.cur && !match.over && turnHits[t] ? `<span class="tm">${turnHits[t]}</span>` : `<span class="tm"></span>`;
+    html += left.map(i=>`<div class="mk L ${dead}">${tm(i)}${MARK[L.p[i].marks[t]]}</div>`).join("");
     html += `<button type="button" class="cmod ${dead}" data-n="${t}" data-m="2" ${dis}>D</button>`;
     html += `<button type="button" class="cnum ${dead}" data-n="${t}" data-m="1" ${dis}>${t===25?"B":t}</button>`;
     html += t===25 ? `<div></div>` : `<button type="button" class="cmod ${dead}" data-n="${t}" data-m="3" ${dis}>T</button>`;
-    html += right.map(i=>`<div class="mk ${dead}">${MARK[L.p[i].marks[t]]}</div>`).join("");
+    html += right.map(i=>`<div class="mk R ${dead}">${MARK[L.p[i].marks[t]]}${tm(i)}</div>`).join("");
   }
-  const lasts = match.players.map((pl,i)=>{ const l=L.p[i].last; return l ? `${esc(pl.name)}: ${esc(l.darts.join(" "))} (${l.marks} mk)` : ""; }).filter(Boolean);
-  return `<div class="cg" style="grid-template-columns:${cols};grid-template-rows:${n>2?"auto ":""}repeat(7,minmax(34px,1fr))">${html}</div>
-    ${lasts.length?`<div class="hint" style="padding:0 12px 10px;text-align:center">${lasts.join(" · ")}</div>`:""}`;
+  return `<div class="cg" style="grid-template-columns:${cols};grid-template-rows:${n>2?"auto ":""}repeat(7,minmax(34px,1fr))">${html}</div>`;
 }
 function renderBar(){
   const o = match.opts, n = match.players.length;
@@ -1959,7 +1977,7 @@ function renderCricketDock(){
     <div class="throwing"><span class="tname">${name}</span> is throwing · <b>${left} dart${left===1?"":"s"} left</b>${isCricket(match.game)&&match.turn.length?` · ${match.turnMarks} mk`:""}</div>
     <div class="entry"><button type="button" class="back" data-act="undo" ${hist.length?"":"disabled"}>BACK</button>
     <div class="disp" aria-live="polite">${slots}</div>
-    <button type="button" class="miss" data-act="crest" ${dis}>${match.turn.length?"END<br>TURN":"MISS"}</button></div></div>`;
+    <button type="button" class="miss ${match.turn.length>=3?"go":""}" data-act="crest" ${dis}>${match.turn.length?"END<br>TURN":"MISS"}</button></div></div>`;
 }
 function renderOverlay(){
   const so = sessionOverlay(); if(so) return so;
@@ -2171,7 +2189,7 @@ function renderHalveDock(){
     <div class="throwing"><span class="tname">${name}</span> · <b>${modeText()}</b> · ${left} dart${left===1?"":"s"} left${running}</div>
     <div class="entry"><button type="button" class="back" data-act="undo" ${hist.length?"":"disabled"}>BACK</button>
       <div class="disp">${slots}</div>
-      <button type="button" class="miss" data-act="crest" ${dis}>${match.turn.length?"END<br>TURN":"MISS"}</button></div>
+      <button type="button" class="miss ${match.turn.length>=3?"go":""}" data-act="crest" ${dis}>${match.turn.length?"END<br>TURN":"MISS"}</button></div>
     ${input}
   </div>`;
 }
@@ -2234,7 +2252,7 @@ function renderRGDock(){
     return `<div class="dock">
     <div class="throwing"><span class="tname">${name}</span> · <b>Hole ${t}</b> · ${left} dart${left===1?"":"s"} left${cur?` · keeping ${cur.v}`:""}</div>
     <div class="entry">${back}<div class="disp">${slots}</div>
-      <button type="button" class="miss" data-act="crest" ${match.turn.length&&!dis?"":"disabled"}>KEEP<br>SCORE</button></div>
+      <button type="button" class="miss ${match.turn.length>=3?"go":""}" data-act="crest" ${match.turn.length&&!dis?"":"disabled"}>KEEP<br>SCORE</button></div>
     <div class="pad p4">
       <button type="button" class="k g" data-rg="${t}" data-m="2" ${dis}><small>Double</small>1</button>
       <button type="button" class="k r" data-rg="${t}" data-m="3" ${dis}><small>Triple</small>2</button>
@@ -2242,7 +2260,7 @@ function renderRGDock(){
       <button type="button" class="k" data-rg="0" data-m="0" ${dis}><small>Miss</small>5</button>
     </div></div>`;
   }
-  const endBtn = `<button type="button" class="miss" data-act="crest" ${dis}>${match.turn.length?"END<br>TURN":"MISS"}</button>`;
+  const endBtn = `<button type="button" class="miss ${match.turn.length>=3?"go":""}" data-act="crest" ${dis}>${match.turn.length?"END<br>TURN":"MISS"}</button>`;
   if(g==="atc"){
     const lbl = t===25 ? "Bull" : t;
     return `<div class="dock">
