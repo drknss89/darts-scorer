@@ -36,7 +36,8 @@ which simply loads this site, so pushing to `main` updates the Android app too.
 ## Ryan's preferences (already implemented)
 - Turns never end on their own after the 3rd dart. The player taps END TURN. A 4th dart is blocked. Exceptions: a winning dart, or a player knocked out mid-turn in Killer.
 - Who throws first is chosen at setup and on Rematch (a player, a bull-off, or random).
-- The app is used on a wall-mounted tablet next to the board, so key info must be readable from the oche: big target banner in round games, big yellow cricket marks.
+- The app is used on a wall-mounted tablet next to the board, so key info must be readable from the oche: big target banner in round games, big cream cricket marks.
+- Colour scheme matches the app icon (CSS variables in `:root`): purple `--accent` (neon ring/darts) for UI, cream `--gold` (sisal) for highlights, board red/green for triples, doubles, MISS and busts.
 
 ## Ryan's house rules (already implemented)
 - Killer:
