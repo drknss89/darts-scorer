@@ -2305,7 +2305,7 @@ function render01Dock(){
   return `<div class="dock">
     ${calcLine()}<div class="entry"><button type="button" class="back" data-act="back">BACK</button>
       <div class="disp ${cls}" aria-live="polite">${disp}</div>
-      ${entry ? `<button type="button" class="miss ent" data-act="enter" ${dis}>ENTER</button>` : `<button type="button" class="miss" data-score="0" ${dis}>MISS</button>`}</div>
+      <button type="button" class="miss" data-score="0" ${entry||dis?"disabled":""}>MISS</button></div>
     <div class="pad">
       ${q(qs(0),!!entry)}${k(1)}${k(2)}${k(3)}${q(qs(5),!!entry)}
       ${q(qs(1),!!entry)}${k(4)}${k(5)}${k(6)}${q(qs(6),!!entry)}
@@ -2504,7 +2504,7 @@ function renderHalveDock(){
     <div class="throwing"><span class="tname">${name}</span> · <b>${t}</b> · total must be ${t.toLowerCase()}</div>
     ${calcLine()}<div class="entry"><button type="button" class="back" data-act="back">BACK</button>
       <div class="disp ${entry?(isCalc(entry)?"typed calcd":"typed"):""}">${disp}</div>
-      ${entry ? `<button type="button" class="miss ent" data-act="enter" ${dis}>ENTER</button>` : `<button type="button" class="miss" data-score="0" ${dis}>MISS</button>`}</div>
+      <button type="button" class="miss" data-score="0" ${entry||dis?"disabled":""}>MISS</button></div>
     <div class="pad p3">
       ${k(1)}${k(2)}${k(3)}${k(4)}${k(5)}${k(6)}${k(7)}${k(8)}${k(9)}
       ${calcRows(q,k,dis,false)}
@@ -2571,7 +2571,7 @@ function renderRGDock(){
     return `<div class="dock">
     <div class="throwing"><span class="tname">${name}</span> · round ${roundNo()} of ${rgRounds().length}</div>
     ${calcLine()}<div class="entry">${back}<div class="disp ${entry?(isCalc(entry)?"typed calcd":"typed"):""}">${entry ? calcText(entry) : `<span class="muted">Enter 3-dart score</span>`}</div>
-      ${entry ? `<button type="button" class="miss ent" data-act="enter" ${dis}>ENTER</button>` : `<button type="button" class="miss" data-score="0" ${dis}>MISS</button>`}</div>
+      <button type="button" class="miss" data-score="0" ${entry||dis?"disabled":""}>MISS</button></div>
     <div class="pad">
       ${q(qs(0),!!entry)}${k(1)}${k(2)}${k(3)}${q(qs(5),!!entry)}
       ${q(qs(1),!!entry)}${k(4)}${k(5)}${k(6)}${q(qs(6),!!entry)}
