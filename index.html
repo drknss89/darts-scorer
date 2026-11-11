@@ -329,6 +329,16 @@ h1 .ring{width:38px;height:38px;flex:none;background:url(data:image/png;base64,i
 .qsgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .qsgrid input{background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--chalk);padding:10px;font-family:var(--display);font-weight:700;font-size:22px;text-align:center;width:100%}
 
+/* teams */
+.nmbar.team b{font-weight:800}
+.nmbar.team small{font-size:.62em;font-weight:600;opacity:.7;margin:0 .15em}
+.tchips{display:flex;gap:4px;flex:none}
+.tchips button{width:38px;height:44px;border-radius:8px;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);font-family:var(--display);font-weight:800;font-size:20px;padding:0}
+.tchips button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.teamlist{display:grid;gap:4px;margin:6px 0 2px}
+.teamlist div{font-size:14px;color:var(--chalk)}
+.teamlist b{color:var(--gold);margin-right:6px}
+
 /* bar + entry + keypad */
 .bar{display:grid;grid-template-columns:44px 1fr auto 44px;align-items:center;gap:8px;margin:0 6px;padding:6px 8px;border-radius:10px 10px 0 0;background:linear-gradient(var(--accent),var(--accent-lo))}
 .bar .ib{width:36px;height:34px;border-radius:6px;display:grid;place-items:center;font-size:20px;font-weight:700;background:rgba(0,0,0,.25);color:#fff}
@@ -397,7 +407,7 @@ const catOf = g => (CATS.find(c=>c[2].includes(g)) || CATS[0])[0];
 const KEY = "dartsScorer.v2";
 const app = document.getElementById("app");
 
-let settings = { game:"501", inMode:"straight", outMode:"double", points:true, lives:3, shRounds:7, cuRounds:8, firstThrow:"0", hammerMode:"open", sets:1, legs:3, emails:[], players:["Home","Away"] };
+let settings = { game:"501", inMode:"straight", outMode:"double", points:true, lives:3, shRounds:7, cuRounds:8, firstThrow:"0", hammerMode:"open", sets:1, legs:3, emails:[], players:["Home","Away"], teams:"0", teamOf:[] };
 let match = null, hist = [], screen = "setup", dialog = null, entry = "", pending = null, mod = 1;
 
 /* ---------- storage ---------- */
@@ -660,6 +670,18 @@ function playerStats(m, i){
   }
   return { rows, raw };
 }
+function memberStats(m, side, w, team){
+  const own = (m.tlog||[]).filter(e=>e.k==="leg" ? e.p===side : !(e.p===side && e.w!==undefined && e.w!==w));
+  const base = m.base==="medley" || is01(m.game) || isCricket(m.game);
+  if(base){
+    const st = playerStats(Object.assign({}, m, { tlog: own }), side);
+    st.raw = Object.assign({}, st.raw);
+    return st;
+  }
+  const t = own.filter(e=>e.p===side && e.w===w && ["hv","rg"].includes(e.k));
+  const pts = t.reduce((a,e)=>a+(typeof e.score==="number" ? e.score : 0),0);
+  return { rows: [["Team result", team.rows[0][1]], ["Points scored", pts], ["Turns", t.length], ["Darts thrown", t.length*3]], raw: { game:m.game, won:false } };
+}
 function breakdown(m){
   const T = m.tlog || [], names = m.players.map(p=>p.name), out = [];
   const keys = []; T.forEach(e=>{ const k = e.s+"-"+e.l; if(!keys.includes(k)) keys.push(k); });
@@ -690,15 +712,25 @@ function buildRecord(m){
   const stats = m.players.map((p,i)=>playerStats(m,i));
   stats.forEach((st,i)=>{ st.raw.won = winners.includes(i); st.raw.place = order.indexOf(i)+1; });
   stats.forEach((st,i)=>{ if(oneGame(m.game)) st.raw.darts = m.leg.p[i].darts; });
-  return { id:m.id, game:m.base||m.game, opts:m.opts, title:gameName(m.base||m.game, m.opts), date:m.started||Date.now(), end:Date.now(), result, tlog:m.tlog||[],
+  const rec = { id:m.id, game:m.base||m.game, opts:m.opts, title:gameName(m.base||m.game, m.opts), date:m.started||Date.now(), end:Date.now(), result, tlog:m.tlog||[],
     players: m.players.map((p,i)=>({ name:p.name, pid:p.pid||null, place: order.indexOf(i)+1, rows: stats[i].rows, raw: stats[i].raw })),
     breakdown: breakdown(m) };
+  if(m.teams){
+    rec.teams = true;
+    rec.members = m.players.flatMap((p,i)=>(p.members||[]).map((mb,w)=>{
+      const st = memberStats(m, i, w, stats[i]);
+      st.raw.won = winners.includes(i); st.raw.place = order.indexOf(i)+1; st.raw.team = true;
+      return { name:mb.name, pid:mb.pid||null, side:i, w, team:p.name, place: order.indexOf(i)+1, rows: st.rows, raw: st.raw };
+    }));
+  }
+  return rec;
 }
 
 /* ---- career ---- */
 function mergeCareer(c, raws){
   c = c || {};
   c.matches = (c.matches||0) + raws.length; c.wins = (c.wins||0) + raws.filter(r=>r.won).length;
+  c.teamGames = (c.teamGames||0) + raws.filter(r=>r.team).length; c.teamWins = (c.teamWins||0) + raws.filter(r=>r.team && r.won).length;
   raws.forEach(r=>{
     if(r.x01){ const x = c.x01 = c.x01 || {}; const a = r.x01;
       ["darts","pts","c180","c140","c100","co","dd","legs","legsWon"].forEach(k=>x[k]=(x[k]||0)+(a[k]||0));
@@ -715,6 +747,7 @@ function mergeCareer(c, raws){
 function careerRows(c){
   if(!c) return [];
   const rows = [["Matches played", c.matches||0], ["Matches won", c.wins||0]];
+  if(c.teamGames) rows.push(["Team games", `${c.teamWins||0} won of ${c.teamGames}`]);
   if(c.x01 && c.x01.darts){ const x = c.x01;
     rows.push(["X01 average", r1(x.pts/x.darts*3)], ["X01 legs won", x.legsWon||0], ["180s", x.c180||0], ["140+", x.c140||0], ["100+", x.c100||0], ["Highest score", x.hi||0], ["Highest checkout", x.hiCo||"–"], ["Best leg", x.best ? x.best+" darts" : "–"]);
     if(x.dd) rows.push(["Checkout %", Math.round(x.co/x.dd*100)+"%"]); }
@@ -774,20 +807,23 @@ function gameType(rec, leg){
   return is01(rec.game) ? rec.game : NAMES[rec.game] || rec.game;
 }
 
+/* who threw a turn: the partner in team games, otherwise the player */
+function turnName(g, e){ if(g.members && e.w!==undefined){ const m = g.members.find(x=>x.side===e.p && x.w===e.w); if(m) return m.name; } return g.players[e.p] ? g.players[e.p].name : ""; }
 function reportHtml(games, forPid, career){
   games = games.slice().sort((a,b)=>a.date-b.date);
   const start = games.length ? Math.min(...games.map(g=>g.date)) : Date.now(), end = games.length ? Math.max(...games.map(g=>g.end||g.date)) : Date.now();
-  const names = [...new Set(games.flatMap(g=>g.players.map(p=>p.name)))];
+  const names = [...new Set(games.flatMap(g=>g.players.map(p=>p.name).concat((g.members||[]).map(p=>p.name))))];
   const legsAll = games.map(g=>legsOf(g));
   const totalLegs = legsAll.reduce((a,L)=>a+L.length,0);
   const totalDarts = games.reduce((a,g)=>a+g.players.reduce((b,p)=>b+(p.raw.darts||(p.raw.x01&&p.raw.x01.darts)||(p.raw.cr&&p.raw.cr.darts)||0),0),0);
 
   /* aggregate per player */
   const agg = {}; names.forEach(n=>agg[n] = { wins:0, games:0, legs:0, pts:0, d01:0, marks:0, dcr:0 });
-  games.forEach(g=>g.players.forEach(p=>{ const a = agg[p.name]; a.games++; if(p.raw.won) a.wins++;
+  games.forEach(g=>g.players.concat(g.members||[]).forEach(p=>{ const a = agg[p.name]; a.games++; if(p.raw.won) a.wins++;
     if(p.raw.x01){ a.pts += p.raw.x01.pts; a.d01 += p.raw.x01.darts; a.legs += p.raw.x01.legsWon; }
     if(p.raw.cr){ a.marks += p.raw.cr.marks; a.dcr += p.raw.cr.darts; a.legs += p.raw.cr.legsWon; } }));
-  const tot = Object.values(agg).reduce((t,a)=>{ ["pts","d01","marks","dcr","legs"].forEach(k=>t[k]+=a[k]); return t; }, {pts:0,d01:0,marks:0,dcr:0,legs:0});
+  const tot = {pts:0,d01:0,marks:0,dcr:0,legs:0};
+  games.forEach(g=>g.players.forEach(p=>{ if(p.raw.x01){ tot.pts += p.raw.x01.pts; tot.d01 += p.raw.x01.darts; tot.legs += p.raw.x01.legsWon; } if(p.raw.cr){ tot.marks += p.raw.cr.marks; tot.dcr += p.raw.cr.darts; tot.legs += p.raw.cr.legsWon; } }));
   const avg = (p,d) => d ? r2(p/d*3).toFixed(2) : "–";
 
   let h = `<div style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:700px">`;
@@ -797,7 +833,7 @@ function reportHtml(games, forPid, career){
     <td><b>Length:</b> ${fmtDur(end-start)}<br><b>Players:</b> ${names.length}</td>
     <td><b>Games:</b> ${games.length}<br><b>Legs:</b> ${totalLegs}<br><b>Darts:</b> ${totalDarts}</td></tr></table>`;
   if(forPid){
-    const mine = games.map(g=>g.players.find(p=>p.pid===forPid)).filter(Boolean);
+    const mine = games.map(g=>(g.members || g.players).find(p=>p.pid===forPid)).filter(Boolean);
     if(mine.length) h += `<div style="background:#eef2f7;border-left:4px solid ${NAVY};padding:8px 10px;margin:6px 0">Your night: <b>${mine.length}</b> game${mine.length===1?"":"s"}, <b>${mine.filter(p=>p.raw.won).length}</b> won.</div>`;
   }
 
@@ -842,12 +878,13 @@ function reportHtml(games, forPid, career){
       for(let r=0;r<rounds;r++){
         rows += `<tr bgcolor="${r%2?"#f6f7f9":"#fff"}">${TD(r+1,"color:#888;text-align:center")}${per.map(a=>{ const e = a[r];
           if(!e) return TD("")+TD("");
+          const who = g.members && e.w!==undefined ? `<span style="color:#888;font-size:11px">${H(turnName(g,e).split(" ")[0])}</span> ` : "";
           if(e.k==="01"){
             const turn = e.bust ? `<span style="color:${RED}">Bust</span>` : e.v;
             const style = e.co ? `color:#fff;background:${RED};font-weight:bold;text-align:right` : e.v>=100 && !e.bust ? "text-align:right;font-weight:bold" : "text-align:right";
-            return TD(turn + (e.co ? ` <span style="font-size:11px">DO(${e.darts})</span>` : ""), "text-align:right") + TD(e.left, style);
+            return TD(who + turn + (e.co ? ` <span style="font-size:11px">DO(${e.darts})</span>` : ""), "text-align:right") + TD(e.left, style);
           }
-          if(e.k==="cr") return TD(H(crHit(e.d)) + (e.marks>=5 ? ` <b style="color:${RED}">${e.marks}M</b>` : ""), "font-size:12px") + TD(e.pts ? e.pts[e.p] : "", "text-align:right");
+          if(e.k==="cr") return TD(who + H(crHit(e.d)) + (e.marks>=5 ? ` <b style="color:${RED}">${e.marks}M</b>` : ""), "font-size:12px") + TD(e.pts ? e.pts[e.p] : "", "text-align:right");
           if(e.k==="ki") return TD(H(e.d.join(" ")), "font-size:12px") + TD("");
           if(e.k==="hv") return TD(e.halved ? `<span style="color:${RED}">½</span>` : "+"+e.score, "text-align:right") + TD(e.total, "text-align:right;font-weight:bold");
           return TD(H(e.tag), "font-size:12px") + TD(e.total!==undefined ? e.total : "", "text-align:right;font-weight:bold");
@@ -863,8 +900,8 @@ function reportHtml(games, forPid, career){
   };
 
   /* performance + counts */
-  const turns01 = games.flatMap(g=>(g.tlog||[]).filter(e=>e.k==="01").map(e=>Object.assign({ name:g.players[e.p].name, gid:g.id }, e)));
-  const turnsCr = games.flatMap(g=>(g.tlog||[]).filter(e=>e.k==="cr").map(e=>Object.assign({ name:g.players[e.p].name }, e)));
+  const turns01 = games.flatMap(g=>(g.tlog||[]).filter(e=>e.k==="01").map(e=>Object.assign({ name:turnName(g,e), gid:g.id }, e)));
+  const turnsCr = games.flatMap(g=>(g.tlog||[]).filter(e=>e.k==="cr").map(e=>Object.assign({ name:turnName(g,e) }, e)));
   const leader = (arr, f) => { if(!arr.length) return null; const best = Math.max(...arr.map(f)); if(!(best>0)) return null; const who = arr.filter(e=>f(e)===best).map(e=>e.name);
     const c = {}; who.forEach(w=>c[w]=(c[w]||0)+1); return `${best} &nbsp; ${Object.keys(c).map(w=>`${H(w)}${c[w]>1?` ×${c[w]}`:""}`).join(", ")}`; };
   let perf = "";
@@ -877,7 +914,7 @@ function reportHtml(games, forPid, career){
     const hm = leader(turnsCr, e=>e.marks); if(hm) lead.push(["Cricket high turn (marks)", hm]);
   }
   if(lead.length) perf += TBL(`<tr>${TH("Leaders","text-align:left")}${TH("","text-align:left")}</tr>` + lead.map((r,k)=>`<tr bgcolor="${k%2?"#f3f5f8":"#fff"}">${TD(r[0])}${TD(r[1])}</tr>`).join(""));
-  perf += TBL(`<tr>${TH("Game","text-align:left")}${TH("Player","text-align:left")}${TH("Place")}${TH("Key stats","text-align:left")}</tr>` + games.map((g,gi)=>g.players.map((p,k)=>
+  perf += TBL(`<tr>${TH("Game","text-align:left")}${TH("Player","text-align:left")}${TH("Place")}${TH("Key stats","text-align:left")}</tr>` + games.map((g,gi)=>g.players.concat((g.members||[]).map(x=>Object.assign({}, x, { name:`↳ ${x.name} (${x.team})` }))).map((p,k)=>
     `<tr bgcolor="${gi%2?"#f3f5f8":"#fff"}" ${k===0?'style="border-top:2px solid #ccd"':""}>${TD(k===0?`<b>${gi+1}</b> ${H(gameType(g))}`:"")}${TD(`${p.raw.won?"★ ":""}${H(p.name)}`)}${TD(p.place,"text-align:center")}${TD(p.rows.slice(0,4).map(r=>`${H(r[0])}: <b>${H(r[1])}</b>`).join(" · "),"font-size:12px")}</tr>`).join("")).join(""));
 
   let counts = "";
@@ -1136,10 +1173,11 @@ async function deliver(games, sentRef, sid){
   sending = true;
   const sent = [], failed = [];
   try{
-    const keys = [...new Set(games.flatMap(g=>g.players.map(p=>p.pid)).filter(k=>k && ownsKey(k)))];
+    const who = g => g.members || g.players;
+    const keys = [...new Set(games.flatMap(g=>who(g).map(p=>p.pid)).filter(k=>k && ownsKey(k)))];
     for(const key of keys){
       const person = personByKey(key); if(!person) continue;
-      const mine = games.map(g=>({ g, p:g.players.find(p=>p.pid===key) })).filter(x=>x.p);
+      const mine = games.map(g=>({ g, p:who(g).find(p=>p.pid===key) })).filter(x=>x.p);
       await fb.ref(`${basePath(key)}/history/${sid}`).set(JSON.parse(JSON.stringify({ date: games[0].date,
         games: mine.map(x=>({ title:x.g.title, won:!!x.p.raw.won, place:x.p.place })), raws: mine.map(x=>x.p.raw) })));
       let career = null; try{ career = await careerFor(key); }catch(e){}
@@ -1290,17 +1328,38 @@ function newLeg(){
     : { marks:{20:0,19:0,18:0,17:0,16:0,15:0,25:0}, points:0, darts:0, hits:0, turns:0, last:null });
   return { p, log:[], phase: g==="killer" ? "pick" : "play", round:0 };
 }
-function tl(e){ if(!match.tlog) match.tlog = []; e.s = match.setNo; e.l = match.legNo; match.tlog.push(e); return match.tlog.length-1; }
+function tl(e){ if(!match.tlog) match.tlog = []; e.s = match.setNo; e.l = match.legNo;
+  if(match.teams && ["01","cr","hv","rg","ki"].includes(e.k)){ const w = upIdx(e.p); if(w!==null) e.w = w; }
+  match.tlog.push(e); return match.tlog.length-1; }
+/* ---------- teams: each side is one "player"; partners take turns (A1, B1, A2, B2) ---------- */
+const teamable = g => !["killer","bobs"].includes(g);
+const TEAM_L = ["A","B","C","D"];
+function teamsOn(){ const k = +settings.teams||0; return k>=2 && teamable(settings.game) && settings.players.length>k; }
+const teamOfP = i => { const k = +settings.teams||0, t = (settings.teamOf||[])[i]; return Number.isInteger(t) && t<k ? t : i % k; };
+function teamGroups(){ const k = +settings.teams||0, g = [...Array(k)].map(()=>[]); settings.players.forEach((_,i)=>g[teamOfP(i)].push(i)); return g; }
+function upIdx(i){
+  const p = match && match.players[i]; if(!p || !p.members) return null;
+  const tc = (match.leg && match.leg.tc && match.leg.tc[i]) || 0, legsDone = (match.tlog||[]).filter(e=>e.k==="leg").length;
+  return (tc + legsDone) % p.members.length;
+}
+function whoName(i){ if(i===undefined) i = match.cur; const p = match.players[i]; if(!p) return ""; const k = upIdx(i); return k===null ? p.name : p.members[k].name; }
+function sideName(i){ const p = match.players[i]; return p.members ? p.members.map(m=>m.name).join(" & ") : p.name; }
+const keepOf = P => P.map(p=>({ name:p.name, pid:p.pid||null, members:p.members ? p.members.map(m=>({ name:m.name, pid:m.pid||null })) : null }));
 function startMatch(keep){
-  const names = keep ? keep.map(p=>p.name) : settings.players.map((n,i)=>n.trim() || `Player ${i+1}`);
-  const pids = keep ? keep.map(p=>p.pid||null) : (settings.pids || []).slice(0, names.length);
+  const nm = i => settings.players[i].trim() || `Player ${i+1}`, pd = i => (settings.pids || [])[i] || null;
+  let sides;
+  if(keep) sides = keep;
+  else if(teamsOn()) sides = teamGroups().filter(g=>g.length).map(g=>({ name:g.map(nm).join(" & "), pid:null, members:g.map(i=>({ name:nm(i), pid:pd(i) })) }));
+  else sides = settings.players.map((_,i)=>({ name:nm(i), pid:pd(i) }));
+  const names = sides.map(x=>x.name), pids = sides.map(x=>x.pid||null);
   match = {
     game: settings.game==="medley" ? "501" : settings.game,
     base: settings.game==="medley" ? "medley" : null,
     opts: { inMode:settings.inMode, outMode:settings.outMode, points: settings.game==="cutthroat" ? true : settings.points, lives:settings.lives, shRounds:settings.shRounds, cuRounds:settings.cuRounds, hammerMode:settings.hammerMode||"open",
       cutthroat: settings.game==="cutthroat",
       sets: oneGame(settings.game) ? 1 : settings.sets, legs: oneGame(settings.game) ? 1 : settings.game==="medley" ? Math.max(3, settings.legs|1) : settings.legs },
-    players: names.map((name,i) => ({ name, pid: pids[i] || null, sets:0, legs:0, legsTotal:0, cDarts:0, cScore:0 })),
+    players: names.map((name,i) => Object.assign({ name, pid: pids[i] || null, sets:0, legs:0, legsTotal:0, cDarts:0, cScore:0 }, sides[i].members ? { members: sides[i].members } : {})),
+    teams: sides.some(x=>x.members),
     setNo:1, legNo:1, legStarter:0, cur:0, turn:[], turnMarks:0, over:null,
     id: Date.now().toString(36) + Math.random().toString(36).slice(2,6), started: Date.now(), tlog: []
   };
@@ -1320,6 +1379,7 @@ function snapshot(){ hist.push(JSON.stringify(match)); if(hist.length>400) hist.
 function undo(){ if(!hist.length) return; match = JSON.parse(hist.pop()); entry = ""; pending = null; save(); render(); }
 function nextPlayer(){
   const n = match.players.length;
+  if(match.teams){ const L = match.leg; L.tc = L.tc || []; L.tc[match.cur] = (L.tc[match.cur]||0) + 1; }
   for(let k=0;k<n;k++){
     match.cur = (match.cur+1) % n;
     if((match.game!=="killer" && match.game!=="bobs") || !match.leg.p[match.cur].out) return;
@@ -1890,17 +1950,23 @@ function renderSetup(){
     <div class="card" ${online && online.host ? 'hidden' : ""}><div class="label">Players</div>
       <div class="players">${s.players.map((n,i)=>`<div class="pblock"><div class="prow">
         <input id="pl-${i}" data-pl="${i}" value="${esc(n)}" maxlength="20" aria-label="Player ${i+1} name" autocomplete="off">
+        ${teamsOn() ? `<div class="tchips" role="group" aria-label="Team for ${esc(n)}">${TEAM_L.slice(0,+s.teams).map((L,k)=>`<button type="button" data-team="${i}" data-tv="${k}" aria-pressed="${teamOfP(i)===k}">${L}</button>`).join("")}</div>` : ""}
         ${s.players.length>1 ? `<button type="button" class="x" data-rm="${i}" aria-label="Remove ${esc(n)}">×</button>` : ""}</div>
         ${profilesOn() ? `<select class="em" data-link="${i}" aria-label="Stats for ${esc(n)}">${linkOptions((s.links||[])[i]||"", true)}</select>` : ""}</div>`).join("")}</div>
       ${profilesOn() ? `<div class="hint">Pick who each player is so their stats are saved. ${mode==="online" ? "Friends joining online link themselves when they join." : "Add guest players for people without an account."}</div>` : ""}
       ${s.players.length<8 ? `<button type="button" class="ghost" data-act="addp">+ Add player</button>` : ""}
+      ${teamable(s.game) && s.players.length>=3 ? `<div class="label">Teams</div>
+      <div class="seg small">${segBtns("teams", [["0","No teams"],["2","2 teams"]].concat(s.players.length>=6 ? [["3","3 teams"]] : []).concat(s.players.length>=8 ? [["4","4 teams"]] : []), teamsOn() ? String(s.teams) : "0")}</div>` : ""}
+      ${teamsOn() ? `<div class="teamlist">${teamGroups().map((g,k)=>`<div><b>Team ${TEAM_L[k]}</b>${g.length ? esc(g.map(i=>s.players[i].trim()||`Player ${i+1}`).join(" & ")) : `<span class="muted">nobody yet: tap ${TEAM_L[k]} next to a player</span>`}</div>`).join("")}</div>` : ""}
       ${s.players.length>1 ? `<div class="label">Throws first</div>
-      <div class="seg small first">${segBtns("firstThrow", s.players.map((n,i)=>[String(i), esc(n.trim() || `Player ${i+1}`)]).concat([["bull","Bull-off"],["random","Random"]]), String(s.firstThrow||"0"))}</div>` : ""}
-      <div class="hint">Turns go in list order, starting from whoever throws first.${oneGame(s.game) ? "" : " The first thrower then rotates each leg."}</div>
+      <div class="seg small first">${segBtns("firstThrow", (teamsOn() ? teamGroups().map((g,k)=>[String(k), `Team ${TEAM_L[k]}`]) : s.players.map((n,i)=>[String(i), esc(n.trim() || `Player ${i+1}`)])).concat([["bull","Bull-off"],["random","Random"]]), String(s.firstThrow||"0"))}</div>` : ""}
+      <div class="hint">${teamsOn() ? "Partners take turns: A1, B1, A2, B2… Each team shares one score; everyone also gets their own stats." : "Turns go in list order, starting from whoever throws first."}${oneGame(s.game) ? "" : teamsOn() ? " The first team and first partner rotate each leg." : " The first thrower then rotates each leg."}</div>
     </div>
     ${s.game==="killer" && s.players.length<2 ? `<div class="hint">Killer needs at least 2 players.</div>` : ""}
-    ${(online && online.host) || (profilesOn() && mode==="online") ? "" : `<button type="button" class="primary" data-act="start" ${s.game==="killer" && s.players.length<2 ? "disabled" : ""}>${resumable && !profilesOn() ? "Start new match" : "Start match"}</button>`}
-    ${onlineAvailable() && !(online && online.host) && (!profilesOn() || mode==="online") ? `<button type="button" class="${profilesOn()?"primary":"secondary"}" data-act="host" ${s.game==="killer" && s.players.length<2 ? "disabled" : ""}>Host online match</button>
+    ${teamsOn() && teamGroups().some(g=>!g.length) ? `<div class="hint">Every team needs at least one player.</div>` : ""}
+    ${(online && online.host) || (profilesOn() && mode==="online") ? "" : `<button type="button" class="primary" data-act="start" ${(s.game==="killer" && s.players.length<2) || (teamsOn() && teamGroups().some(g=>!g.length)) ? "disabled" : ""}>${resumable && !profilesOn() ? "Start new match" : "Start match"}</button>`}
+    ${onlineAvailable() && !(online && online.host) && (!profilesOn() || mode==="online") ? `<button type="button" class="${profilesOn()?"primary":"secondary"}" data-act="host" ${(s.game==="killer" && s.players.length<2) || teamsOn() ? "disabled" : ""}>Host online match</button>
+    ${teamsOn() ? `<div class="hint" style="text-align:center">Teams are for local games for now. Turn teams off to host online.</div>` : ""}
     <div class="hint" style="text-align:center">Hosting gives you a code. Friends join from their own phones and enter their own darts.</div>` : ""}
   </div>${dialog==="rules" ? rulesOverlay(s.game, s) : dialog==="join" ? onlineOverlay() : sessionOverlay()}`;
 }
@@ -1947,7 +2013,7 @@ function sideCard(i, cls){
   const pl = match.players[i], active = i===match.cur && !match.over;
   const setsLine = match.opts.sets>1 ? `<span>S${pl.sets}</span>` : "";
   return `<div class="side ${cls} ${active?"active":""}">
-    <div class="nmbar">${esc(pl.name)}</div>
+    <div class="nmbar ${pl.members?"team":""}">${pl.members ? (()=>{ const k = upIdx(i); return pl.members.map((m,j)=>j===k ? `<b>${esc(m.name)}</b>` : `<small>${esc(m.name)}</small>`).join(" "); })() : esc(pl.name)}</div>
     <div class="scorebox"><div class="stk">${match.game==="halveit" ? halveLast(i) : isRG(match.game) ? rgLast(i) : `<span class="avg">${avgText(i)}</span><span>${pl.legs}</span>${setsLine}`}</div>
     <div class="big">${bigValue(i)}</div></div></div>`;
 }
@@ -2204,7 +2270,7 @@ function callerCheck(){
   if(overKey && overKey!==prev.overKey) said.push(overText());
   else if(!match.over && is01(match.game) && (now.cur!==prev.cur || now.leg!==prev.leg)){
     const P = match.leg.p[match.cur], dbl = match.opts.outMode==="double";
-    if(P && P.isIn!==false && P.score<=170 && checkout(P.score,3,dbl)) said.push(`${match.players[match.cur].name}, you require ${P.score}`);
+    if(P && P.isIn!==false && P.score<=170 && checkout(P.score,3,dbl)) said.push(`${whoName()}, you require ${P.score}`);
   }
   speak(said);
 }
@@ -2304,7 +2370,7 @@ function render01Dock(){
     const co = checkout(p.score, 3, dbl);
     if(co && p.score<=170 && prefs.hints){ disp = co.join(" · "); cls = "co"; }
     else if(p.turns===0) disp = match.opts.inMode==="double" ? "Double-In" : "Straight-In";
-    else disp = `<span class="muted">${esc(match.players[match.cur].name)} to throw</span>`;
+    else disp = `<span class="muted">${esc(whoName())} to throw</span>`;
   }
   const dis = match.over ? "disabled" : "";
   const q = (v,off)=>`<button type="button" class="q" data-score="${v}" ${off||dis?"disabled":""}>${v}</button>`;
@@ -2321,7 +2387,7 @@ function render01Dock(){
     </div></div>`;
 }
 function renderCricketDock(){
-  const name = esc(match.players[match.cur].name), left = 3 - match.turn.length;
+  const name = esc(whoName()), left = 3 - match.turn.length;
   const slots = [0,1,2].map(k=>{ const d = match.turn[k];
     return d ? `<span class="dart ${d.counted?"":"void"}">${dartLabel(d.n,d.m)}</span>` : `<span class="dart empty">${k+1}</span>`; }).join("");
   const dis = match.over ? "disabled" : "";
@@ -2452,7 +2518,7 @@ function renderKillerDock(){
 /* big "what are we shooting at" banner, readable from the oche */
 function bigTarget(){
   if(!match || match.over) return "";
-  const g = match.game, name = esc(match.players[match.cur].name);
+  const g = match.game, name = esc(whoName());
   const bl = n => n===25 ? "BULL" : String(n);
   let label = "", val = "", sub = "";
   if(g==="halveit"){
@@ -2495,7 +2561,7 @@ function renderHalveBoard(){
 }
 function renderHalveDock(){
   const t = halveTarget(), dis = match.over ? "disabled" : "";
-  const name = esc(match.players[match.cur].name);
+  const name = esc(whoName());
   if(!match.over && t==="CHOICE" && !match.choice){
     const keys = [...Array(20).keys()].map(k=>k+1).concat([25]).map(n=>`<button type="button" class="k ${n===25?"bullk":""}" data-ch="${n}">${n===25?"Bull":n}</button>`).join("");
     return `<div class="dock"><div class="throwing"><span class="tname">${name}</span>: call your number</div>
@@ -2570,7 +2636,7 @@ function renderRGBoard(){
 }
 function renderRGDock(){
   const g = match.game, t = rgTarget(), dis = match.over ? "disabled" : "";
-  const name = esc(match.players[match.cur].name);
+  const name = esc(whoName());
   const back = `<button type="button" class="back" data-act="${g==="countup"?"back":"undo"}" ${g==="countup"||hist.length?"":"disabled"}>BACK</button>`;
   if(g==="countup"){
     const q = (v,off)=>`<button type="button" class="q" data-score="${v}" ${off||dis?"disabled":""}>${v}</button>`;
@@ -2671,7 +2737,7 @@ function render(){
     callerCheck();
     if(online && !match.over && !isMyTurn()){
       const dock = app.querySelector(".dock");
-      if(dock){ dock.classList.add("locked"); dock.insertAdjacentHTML("beforeend", `<div class="lockmsg">Waiting for ${esc(match.players[match.cur].name)}…</div>`); }
+      if(dock){ dock.classList.add("locked"); dock.insertAdjacentHTML("beforeend", `<div class="lockmsg">Waiting for ${esc(whoName())}…</div>`); }
     }
   } else if(screen==="loading") app.innerHTML = `<div class="wrap narrow"><h1><span class="ring" aria-hidden="true"></span>Darts Scorer</h1><div class="hint">Loading…</div></div>`;
   else if(screen==="auth") renderAuth();
@@ -2732,6 +2798,8 @@ app.addEventListener("click", e=>{
       if(match.by!==deviceId){ msg("Only the phone that entered the last score can undo it"); return; }
     } else if(!free.includes(d.act) && !match.over && !isMyTurn()){ msg(`It's ${match.players[match.cur].name}'s turn`); return; }
   }
+  if(d.team!==undefined){ const t = settings.teamOf = settings.teamOf || []; settings.players.forEach((_,i)=>{ if(!Number.isInteger(t[i])) t[i] = teamOfP(i); }); t[+d.team] = +d.tv; save(); render(); return; }
+  if(d.set==="teams"){ settings.teams = d.val; settings.teamOf = []; if(!["bull","random"].includes(settings.firstThrow)) settings.firstThrow = "0"; save(); render(); return; }
   if(d.set){ settings[d.set] = d.set==="points" ? d.val==="true" : ["lives","shRounds","cuRounds"].includes(d.set) ? +d.val : d.val; save(); render(); return; }
   if(d.cat){ const c = CATS.find(x=>x[0]===d.cat); if(catOf(settings.game)!==d.cat) settings.game = c[2][0]; save(); render(); return; }
   if(d.rg!==undefined){ rgDart(+d.rg, +d.m); return; }
@@ -2748,7 +2816,7 @@ app.addEventListener("click", e=>{
   }
   if(d.rm){
     const rm = +d.rm, ft = settings.firstThrow;
-    settings.players.splice(rm,1); (settings.links||[]).splice(rm,1);
+    settings.players.splice(rm,1); (settings.links||[]).splice(rm,1); (settings.teamOf||[]).splice(rm,1);
     if(ft!=="bull" && ft!=="random"){ if(+ft===rm) settings.firstThrow = "0"; else if(+ft>rm) settings.firstThrow = String(+ft-1); }
     save(); render(); return;
   }
@@ -2761,7 +2829,7 @@ app.addEventListener("click", e=>{
     case "addp": settings.players.push(`Player ${settings.players.length+1}`); (settings.links = settings.links || [])[settings.players.length-1] = null; save(); render();
       setTimeout(()=>{ const el=document.getElementById(`pl-${settings.players.length-1}`); if(el){ el.focus(); el.select(); } },0); break;
     case "start": goOffline(); preparePids().then(()=>startMatch()); break;
-    case "startNext": { const keep = match.players.map(p=>({ name:p.name, pid:p.pid })); startMatch(keep); break; }
+    case "startNext": { startMatch(keepOf(match.players)); break; }
     case "backToGame": screen = "game"; render(); break;
     case "nextGame": dialog = null; screen = "setup"; render(); break;
     case "endConfirm": dialog = "endConfirm"; render(); break;
@@ -2808,8 +2876,10 @@ app.addEventListener("click", e=>{
     case "rematchGo": {
       const pv = match;
       Object.assign(settings, { game:pv.base||pv.game, inMode:pv.opts.inMode, outMode:pv.opts.outMode, points:pv.opts.points, lives:pv.opts.lives||3, hammerMode:pv.opts.hammerMode||"open", shRounds:pv.opts.shRounds||settings.shRounds, cuRounds:pv.opts.cuRounds||settings.cuRounds, sets:pv.opts.sets, legs:pv.opts.legs, players:pv.players.map(p=>p.name), firstThrow:d.ft });
+      if(pv.teams){ const flat = pv.players.flatMap((p,k)=>(p.members||[{ name:p.name }]).map(m=>({ name:m.name, k })));
+        Object.assign(settings, { players: flat.map(x=>x.name), teams: String(pv.players.length), teamOf: flat.map(x=>x.k) }); }
       dialog = null;
-      startMatch(pv.players.map(p=>({ name:p.name, pid:p.pid||null }))); break;
+      startMatch(keepOf(pv.players)); break;
     }
   }
 });

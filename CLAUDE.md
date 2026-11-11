@@ -40,6 +40,11 @@ which simply loads this site, so pushing to `main` updates the Android app too.
 - Settings screen (`renderSettings`, gear button on the main screen) holds the colour scheme: `THEMES` presets or custom colours, saved per device in localStorage (`dartsScorer.theme`), applied by `applyTheme()` which derives every CSS variable from main/highlight/background. Device preferences live in `prefs` (`dartsScorer.prefs`, defaults in `PREF_DEF`): `wake` (Wake Lock), `caller` off/big/all plus `voice` (voiceURI), `rate`, `pitch` (speechSynthesis via `callerCheck()` diffing `match.tlog` on render, so online opponents hear calls too), `textSize` (`--ts` CSS multiplier), `hints`, `ddAsk`, `sound`/`vibrate` (`tapFeedback`), `quick` (10 quick-score buttons, `qs(i)`), `startWith` + `defaults` (setup applied on launch). Add future settings there.
 - Default colour scheme matches the app icon (CSS variables in `:root`): purple `--accent` (neon ring/darts) for UI, cream `--gold` (sisal) for highlights, board red/green for triples, doubles, MISS and busts.
 
+## Teams (local games only for now)
+- Setup: `settings.teams` ("0", "2"-"4") and `settings.teamOf` (team per player); `teamsOn()`, `teamGroups()`. Not for Killer or Bob's 27 (`teamable`). Hosting online is disabled while teams are on.
+- Engine: each side is one entry in `match.players` with `members` [{name,pid}]; `match.teams` true. Partners alternate A1, B1, A2, B2: `upIdx(side)` = (side's turns this leg `match.leg.tc` + legs played) % members; `nextPlayer()` bumps `tc`. `whoName()` = who is throwing. `tl()` tags turn entries with `w` (partner index).
+- Stats: `buildRecord` keeps `players` = teams (team stats) and adds `members` = each partner's own stats (`memberStats`, from their own turns; team legs count for both). `deliver()` saves history/emails per member; careers count `teamGames`/`teamWins`. Recap shows teams, then each partner, and the thrower's first name on each turn (`turnName`).
+
 ## Ryan's house rules (already implemented)
 - Killer:
   - Throw for numbers (1–20 or Bull). Hits build lives; going over the max = out.
