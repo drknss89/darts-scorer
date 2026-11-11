@@ -318,6 +318,7 @@ h1 .ring{width:38px;height:38px;flex:none;background:url(data:image/png;base64,i
 .prow2{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .prow2>div:first-child{flex:1 1 180px}
 .prow2 .seg{flex:1 1 220px;max-width:360px}
+.prow2 select{flex:1 1 220px;max-width:360px}
 .prow2 .seg button{min-width:0;font-size:16px;padding:10px 4px;overflow-wrap:anywhere}
 .qsgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .qsgrid input{background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--chalk);padding:10px;font-family:var(--display);font-weight:700;font-size:22px;text-align:center;width:100%}
@@ -2103,7 +2104,7 @@ let settingsFrom = "setup";
 /* ---------- device preferences (Settings screen) ---------- */
 const PREFS_KEY = "dartsScorer.prefs";
 const QS_DEF = [26,40,41,43,57,45,60,81,85,95];
-const PREF_DEF = { wake:true, caller:"off", textSize:"normal", hints:true, ddAsk:true, sound:false, vibrate:false, quick:null, startWith:"last", defaults:null };
+const PREF_DEF = { wake:true, caller:"off", voice:"", rate:"1", pitch:"1", textSize:"normal", hints:true, ddAsk:true, sound:false, vibrate:false, quick:null, startWith:"last", defaults:null };
 let prefs = (()=>{ try{ return Object.assign({}, PREF_DEF, JSON.parse(localStorage.getItem(PREFS_KEY) || "null") || {}); }catch(e){ return Object.assign({}, PREF_DEF); } })();
 const qs = i => (prefs.quick && Number.isFinite(prefs.quick[i])) ? prefs.quick[i] : QS_DEF[i];
 function savePrefs(){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }catch(e){} applyPrefs(); }
@@ -2133,14 +2134,31 @@ function tapFeedback(){
   }catch(e){}
 }
 /* caller voice */
+function allVoices(){ try{ return ("speechSynthesis" in window && speechSynthesis.getVoices) ? speechSynthesis.getVoices() || [] : []; }catch(e){ return []; } }
+/* the voices to offer: English ones first (they read darts scores best), then the rest */
+function voiceList(){
+  const v = allVoices().slice(), en = x=>/^en/i.test(x.lang||"");
+  return v.filter(en).sort((a,b)=>(a.lang+a.name).localeCompare(b.lang+b.name)).concat(v.filter(x=>!en(x)).sort((a,b)=>(a.lang+a.name).localeCompare(b.lang+b.name)));
+}
+const LANGS = { "en-US":"US", "en-GB":"UK", "en-AU":"Australia", "en-IN":"India", "en-IE":"Ireland", "en-ZA":"South Africa", "en-CA":"Canada", "en-NZ":"New Zealand" };
+function voiceLabel(v){
+  const l = (v.lang||"").replace("_","-"), place = LANGS[l] || l;
+  const name = String(v.name||"Voice").replace(/^(Google|Microsoft|Samsung)\s+/i,"").replace(/\s*\(.*\)\s*$/,"");
+  return `${name}${place ? " · "+place : ""}${v.localService===false ? " · online" : ""}`;
+}
 function speak(parts){
   if(!parts.length || !("speechSynthesis" in window)) return;
   try{
     speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(parts.join(". ")); u.rate = 1; u.pitch = 1;
+    const u = new SpeechSynthesisUtterance(parts.join(". "));
+    const v = prefs.voice && allVoices().find(x=>x.voiceURI===prefs.voice || x.name===prefs.voice);
+    if(v){ u.voice = v; u.lang = v.lang; }
+    u.rate = +prefs.rate || 1; u.pitch = +prefs.pitch || 1;
     speechSynthesis.speak(u);
   }catch(e){}
 }
+/* voices load late on Android: refresh the settings list when they arrive */
+try{ if("speechSynthesis" in window) speechSynthesis.addEventListener("voiceschanged", ()=>{ if(screen==="settings" && !app.querySelector("select[data-voice]:focus")) render(); }); }catch(e){}
 function callText(e, mode){
   const big = mode==="big";
   if(e.k==="01"){
@@ -2192,6 +2210,17 @@ function defaultSummary(d){
   let g; try{ g = gameName(d.game, d); }catch(e){ g = d.game; }
   return `${esc(g)} · ${esc((d.players||[]).map(n=>n||"?").join(", "))}`;
 }
+function voiceRows(){
+  const list = voiceList();
+  const sel = list.length ? `<select class="em" data-voice aria-label="Voice">
+      <option value="" ${prefs.voice?"":"selected"}>Device default</option>
+      ${(()=>{ const seen = {}; return list.map(v=>{ const l = voiceLabel(v), dup = list.filter(x=>voiceLabel(x)===l).length>1; seen[l] = (seen[l]||0)+1;
+        return `<option value="${esc(v.voiceURI)}" ${prefs.voice===v.voiceURI?"selected":""}>${esc(dup ? `${l} · voice ${seen[l]}` : l)}</option>`; }).join(""); })()}
+    </select>` : `<div class="hint">No voices found yet. On Android, install or update “Speech Services by Google” and add voices under Settings › General management › Text-to-speech.</div>`;
+  return `${prefRow("Voice", list.length ? `${list.length} voice${list.length===1?"":"s"} on this device` : "", sel)}
+    ${prefRow("Speed", "", prefSeg("rate", [["0.85","Slower"],["1","Normal"],["1.2","Faster"]]))}
+    ${prefRow("Pitch", "", prefSeg("pitch", [["0.8","Deeper"],["1","Normal"],["1.25","Higher"]]))}`;
+}
 function prefsHtml(){
   return `
     <div class="label">Display</div>
@@ -2203,6 +2232,7 @@ function prefsHtml(){
     <div class="card">
       ${prefRow("Caller voice", "Reads scores out loud", prefSeg("caller", [["off","Off"],["big","Big moments"],["all","Everything"]]))}
       <div class="hint">Big moments: 100+, 180, big cricket turns, players knocked out and game shot. Everything adds every score and “you require” on a finish.</div>
+      ${voiceRows()}
       <button type="button" class="secondary" data-act="testVoice">Test the voice</button>
       ${prefRow("Tap sound", "A click when you enter a dart or score", onOff("sound"))}
       ${prefRow("Vibration", "A short buzz on each tap (phones only)", onOff("vibrate"))}
@@ -2662,10 +2692,11 @@ app.addEventListener("click", e=>{
     if(d.pref==="startWith" && v==="default" && !prefs.defaults){ msg("Save a default setup first"); return; }
     prefs[d.pref] = v; savePrefs(); render();
     if(d.pref==="caller" && v!=="off") speak(["Caller on"]);
+    if(d.pref==="rate" || d.pref==="pitch") speak(["One hundred and forty"]);
     if(d.pref==="sound" || d.pref==="vibrate") tapFeedback();
     return;
   }
-  if(d.act==="testVoice"){ if(!("speechSynthesis" in window)){ msg("This device doesn't support a voice"); return; } speak(["One hundred and eighty!", "Ryan, you require 40"]); return; }
+  if(d.act==="testVoice"){ if(!("speechSynthesis" in window)){ msg("This device doesn't support a voice"); return; } speak(["One hundred and eighty!", `${(settings.players[0]||"Ryan").trim() || "Ryan"}, you require 40`]); return; }
   if(d.act==="quickReset"){ prefs.quick = null; savePrefs(); render(); return; }
   if(d.act==="saveDefault"){ prefs.defaults = JSON.parse(JSON.stringify(settings)); savePrefs(); render(); msg("Saved as your default setup"); return; }
   if(d.act==="clearDefault"){ prefs.defaults = null; prefs.startWith = "last"; savePrefs(); render(); return; }
@@ -2792,6 +2823,7 @@ app.addEventListener("input", e=>{
 });
 app.addEventListener("change", e=>{
   const t = e.target, d = t.dataset;
+  if(d.voice!==undefined){ prefs.voice = t.value; savePrefs(); speak(["One hundred and eighty!"]); return; }
   if(d.qs!==undefined){
     const i = +d.qs, v = Math.round(+t.value);
     if(t.value==="" || !POSSIBLE.has(v)){ msg(`${t.value || "That"} can't be scored with 3 darts`); t.value = qs(i); return; }
