@@ -20,6 +20,7 @@ which simply loads this site, so pushing to `main` updates the Android app too.
 
 ## How the app is organised (search these names in index.html)
 - Settings/setup: `settings`, `renderSetup`, `CATS` (game categories), `NAMES`, `gameName`, `rulesFor`.
+- Setup is three pages (`setupStep` 1 Game, 2 Options, 3 Players; `stepsBar`). Page 1: resume/join cards, `quickPicks()` (My default, Quick 501, Quick Cricket, Medley, Same as last time; `data-quick`) and the game list (tapping a game goes to page 2, or straight to 3 when `hasOptionsStep` is false). Page 2: `gameOptionsHtml` + format. Page 3: players, teams, throws first, Start/Host (and the online host's next-game card). Entering setup from another screen resets to page 1 (in `render()`).
 - Screens: `render()` switches `screen` between `loading`, `auth`, `home`, `players`, `setup`, `game`.
 - Match state: `match` (snapshotted into `hist` for undo via `snapshot()`), `startMatch`, `newLeg`, `endLeg`, `nextLeg`.
 - Games:

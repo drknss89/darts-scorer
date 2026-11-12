@@ -339,6 +339,18 @@ h1 .ring{width:38px;height:38px;flex:none;background:url(data:image/png;base64,i
 .teamlist div{font-size:14px;color:var(--chalk)}
 .teamlist b{color:var(--gold);margin-right:6px}
 
+/* setup steps */
+.steps{display:flex;gap:6px;margin:2px 0 4px}
+.step{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 6px;border-radius:10px;background:var(--panel);border:1px solid var(--line);color:var(--muted);font-weight:700;font-size:15px}
+.step span{width:24px;height:24px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--panel-2);font-size:13px;color:var(--chalk)}
+.step.on{border-color:var(--accent);color:var(--chalk);box-shadow:inset 0 -3px 0 var(--accent)}
+.step.on span{background:var(--accent);color:#fff}
+.step.done span{background:var(--accent-dark);color:#fff}
+.step:disabled{opacity:.55}
+.qps{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
+.choice.qp{padding:14px 16px}
+.choice.qp b{font-size:24px}
+
 /* bar + entry + keypad */
 .bar{display:grid;grid-template-columns:44px 1fr auto 44px;align-items:center;gap:8px;margin:0 6px;padding:6px 8px;border-radius:10px 10px 0 0;background:linear-gradient(var(--accent),var(--accent-lo))}
 .bar .ib{width:36px;height:34px;border-radius:6px;display:grid;place-items:center;font-size:20px;font-weight:700;background:rgba(0,0,0,.25);color:#fff}
@@ -1935,24 +1947,9 @@ function stepper(name, val, unit){
     <div class="stepper"><button type="button" data-step="${name}" data-d="-1" aria-label="Fewer ${name}">−</button>
     <output>${val}</output><button type="button" data-step="${name}" data-d="1" aria-label="More ${name}">+</button></div></div>`;
 }
-function renderSetup(){
-  if(settings.game==="medley" && (settings.legs<3 || settings.legs%2===0)) settings.legs = Math.max(3, settings.legs|1);
-  const s = settings, resumable = match && !(match.over && match.over.type==="match");
-  app.innerHTML = `<div class="wrap">
-    ${profilesOn() ? `<div class="row"><button type="button" class="ghost small" data-act="home">‹ Home</button><span class="chip">${mode==="online" ? "Playing online" : "Playing local"}</span></div>` : `<div class="row"><h1><span class="ring" aria-hidden="true"></span>Darts Scorer</h1>${gearBtn()}</div>`}
-    ${resumable && !profilesOn() ? `<div class="card resume"><strong>Match in progress</strong>
-      <div class="hint">${esc(match.players.map(p=>p.name).join(" vs "))} · ${esc(gameName(match.base||match.game, match.opts))}</div>
-      <div class="row" style="gap:8px"><button type="button" class="secondary" style="flex:2" data-act="resume">Resume match</button><button type="button" class="ghost" style="flex:1" data-act="abandon">End match</button></div></div>` : ""}
-    ${!profilesOn() && onlineAvailable() && savedOnline() ? `<div class="card resume"><strong>Online game ${esc(savedOnline().code)}</strong>
-      <div class="hint">Pick up where you left off.</div>
-      <div class="row"><button type="button" class="secondary" style="flex:1" data-act="rejoin">Rejoin</button><button type="button" class="ghost" data-act="forget">Forget it</button></div></div>` : ""}
-    ${onlineAvailable() && (!profilesOn() || mode==="online") && !(online && online.host) ? `<div class="card"><div class="label">Join a friend's game</div>
-      <div class="prow"><input id="joincode" maxlength="4" placeholder="Game code" autocomplete="off" autocapitalize="characters" aria-label="Game code" style="text-transform:uppercase;letter-spacing:.2em;font-weight:700">
-      <button type="button" class="secondary" data-act="join">Join</button></div></div>` : ""}
-    <div class="card"><div class="label">Game</div>
-      <div class="tabs" role="tablist">${CATS.map(([k,l])=>`<button type="button" role="tab" data-cat="${k}" aria-selected="${catOf(s.game)===k}">${l}</button>`).join("")}</div>
-      <div class="seg games">${segBtns("game", CATS.find(c=>c[0]===catOf(s.game))[2].map(g=>[g, shortName(g)]), s.game)}</div>
-      ${s.game==="killer" ? `<div class="label">Lives</div><div class="seg small">${segBtns("lives", [["3","3 lives"],["5","5 lives"]], s.lives)}</div>`
+let setupStep = 1, lastScreen = null;
+function gameOptionsHtml(s){
+  return `${s.game==="killer" ? `<div class="label">Lives</div><div class="seg small">${segBtns("lives", [["3","3 lives"],["5","5 lives"]], s.lives)}</div>`
       : s.game==="shanghai" ? `<div class="label">Rounds</div><div class="seg small">${segBtns("shRounds", [["7","1 to 7"],["20","1 to 20"]], s.shRounds)}</div>`
       : s.game==="medley" ? `
         <div class="hint">Leg 1 is 501, leg 2 is Cricket, and so on. The last leg is decided by a bull-off: the winner picks the game.</div>
@@ -1964,11 +1961,59 @@ function renderSetup(){
       : is01(s.game) ? `
         <div class="label">Start</div><div class="seg small">${segBtns("inMode", [["straight","Straight in"],["double","Double in"]], s.inMode)}</div>
         <div class="label">Finish</div><div class="seg small">${segBtns("outMode", [["double","Double out"],["straight","Straight out"]], s.outMode)}</div>`
-      : s.game==="cricket" ? `<div class="label">Scoring</div><div class="seg small">${segBtns("points", [["true","With points"],["false","No points"]], s.points)}</div>` : ""}
+      : s.game==="cricket" ? `<div class="label">Scoring</div><div class="seg small">${segBtns("points", [["true","With points"],["false","No points"]], s.points)}</div>` : ""}`;
+}
+const hasOptionsStep = g => !!gameOptionsHtml(Object.assign({}, settings, { game:g })).trim() || !oneGame(g);
+function stepsBar(){
+  const skip = !hasOptionsStep(settings.game), lab = skip ? [[1,"Game"],[3,"Players"]] : [[1,"Game"],[2,"Options"],[3,"Players"]];
+  return `<div class="steps" role="navigation" aria-label="Setup steps">${lab.map(([n,l],k)=>`<button type="button" class="step ${n===setupStep?"on":n<setupStep?"done":""}" data-step="${n}" ${n>setupStep?"disabled":""} ${n===setupStep?'aria-current="step"':""}><span>${n<setupStep?"✓":k+1}</span>${l}</button>`).join("")}</div>`;
+}
+function quickPicks(){
+  const q = [];
+  if(prefs.defaults) q.push(["default", "My default", defaultSummary(prefs.defaults)]);
+  q.push(["501", "Quick 501", "Straight in, double out · best of 3 legs"], ["cricket", "Quick Cricket", "With points · best of 3 legs"], ["medley", "Medley", "501 and Cricket legs · best of 3"]);
+  if(match || (settings.players||[]).length) q.push(["last", "Same as last time", `${esc(gameName(settings.game, settings))} · ${esc(settings.players.map((n,i)=>n.trim()||`Player ${i+1}`).join(", "))}`]);
+  return `<div class="qps">${q.map(([k,t,d])=>`<button type="button" class="choice qp ${k==="last"||k==="default"?"alt":""}" data-quick="${k}"><b>${t}</b><span>${d}</span></button>`).join("")}</div>`;
+}
+function renderSetup(){
+  if(settings.game==="medley" && (settings.legs<3 || settings.legs%2===0)) settings.legs = Math.max(3, settings.legs|1);
+  const s = settings, resumable = match && !(match.over && match.over.type==="match");
+  if(setupStep===2 && !hasOptionsStep(s.game)) setupStep = 3;
+  const backRow = `<div class="row"><button type="button" class="ghost small" data-act="stepBack">‹ Back</button><span class="chip">${esc(shortName(s.game))}</span></div>`;
+  let body = "";
+  if(setupStep===1){
+    body = `${profilesOn() ? `<div class="row"><button type="button" class="ghost small" data-act="home">‹ Home</button><span class="chip">${mode==="online" ? "Playing online" : "Playing local"}</span></div>` : `<div class="row"><h1><span class="ring" aria-hidden="true"></span>Darts Scorer</h1>${gearBtn()}</div>`}
+    ${resumable && !profilesOn() ? `<div class="card resume"><strong>Match in progress</strong>
+      <div class="hint">${esc(match.players.map(p=>p.name).join(" vs "))} · ${esc(gameName(match.base||match.game, match.opts))}</div>
+      <div class="row" style="gap:8px"><button type="button" class="secondary" style="flex:2" data-act="resume">Resume match</button><button type="button" class="ghost" style="flex:1" data-act="abandon">End match</button></div></div>` : ""}
+    ${!profilesOn() && onlineAvailable() && savedOnline() ? `<div class="card resume"><strong>Online game ${esc(savedOnline().code)}</strong>
+      <div class="hint">Pick up where you left off.</div>
+      <div class="row"><button type="button" class="secondary" style="flex:1" data-act="rejoin">Rejoin</button><button type="button" class="ghost" data-act="forget">Forget it</button></div></div>` : ""}
+    ${onlineAvailable() && (!profilesOn() || mode==="online") && !(online && online.host) ? `<div class="card"><div class="label">Join a friend's game</div>
+      <div class="prow"><input id="joincode" maxlength="4" placeholder="Game code" autocomplete="off" autocapitalize="characters" aria-label="Game code" style="text-transform:uppercase;letter-spacing:.2em;font-weight:700">
+      <button type="button" class="secondary" data-act="join">Join</button></div></div>` : ""}
+    ${stepsBar()}
+    <div class="label">Quick start</div>
+    ${quickPicks()}
+    <div class="card"><div class="label">Or choose a game</div>
+      <div class="tabs" role="tablist">${CATS.map(([k,l])=>`<button type="button" role="tab" data-cat="${k}" aria-selected="${catOf(s.game)===k}">${l}</button>`).join("")}</div>
+      <div class="seg games">${segBtns("game", CATS.find(c=>c[0]===catOf(s.game))[2].map(g=>[g, shortName(g)]), s.game)}</div>
+      <div class="hint">Tap a game to set it up.</div>
+    </div>
+    ${sessionSetupCards()}`;
+  } else if(setupStep===2){
+    body = `${backRow}
+    ${stepsBar()}
+    <div class="card"><h2 style="margin:0">${esc(shortName(s.game))}</h2>
+      ${gameOptionsHtml(s)}
       <button type="button" class="rulesbtn" data-act="rules">How to play ${esc(shortName(s.game))}</button>
     </div>
     ${oneGame(s.game) ? "" : `<div class="card"><div class="label">Format</div>${stepper("sets", s.sets, "set")}${stepper("legs", s.legs, "leg")}</div>`}
-    ${sessionSetupCards()}
+    <button type="button" class="primary" data-step="3">Next: players</button>`;
+  } else {
+    body = `${backRow}
+    ${stepsBar()}
+    <div class="hint" style="text-align:center">${esc(gameName(s.game, s))}${oneGame(s.game) ? "" : ` · ${s.sets>1 ? `best of ${s.sets} sets, ` : ""}best of ${s.legs} legs`}</div>
     ${online && online.host ? `<div class="card resume"><strong>Online game ${esc(online.code)}: pick the next game</strong>
       <div class="hint">Same players: ${esc(match.players.map(p=>p.name).join(", "))}. Everyone's phone switches over when you start.</div>
       <div class="label">Throws first</div>
@@ -1996,6 +2041,10 @@ function renderSetup(){
     ${onlineAvailable() && !(online && online.host) && (!profilesOn() || mode==="online") ? `<button type="button" class="${profilesOn()?"primary":"secondary"}" data-act="host" ${(s.game==="killer" && s.players.length<2) || teamsOn() ? "disabled" : ""}>Host online match</button>
     ${teamsOn() ? `<div class="hint" style="text-align:center">Teams are for local games for now. Turn teams off to host online.</div>` : ""}
     <div class="hint" style="text-align:center">Hosting gives you a code. Friends join from their own phones and enter their own darts.</div>` : ""}
+`;
+  }
+  app.innerHTML = `<div class="wrap">
+    ${body}
   </div>${dialog==="rules" ? rulesOverlay(s.game, s) : dialog==="join" ? onlineOverlay() : sessionOverlay()}`;
 }
 
@@ -2760,6 +2809,8 @@ function fitGame(){
 }
 window.addEventListener("resize", ()=>{ if(screen==="game") fitGame(); });
 function render(){
+  if(screen==="setup" && lastScreen!=="setup" && lastScreen!=="settings") setupStep = 1;
+  lastScreen = screen;
   if(screen==="game" && match){
     renderGame();
     fitGame();
@@ -2828,6 +2879,14 @@ app.addEventListener("click", e=>{
     } else if(!free.includes(d.act) && !match.over && !isMyTurn()){ msg(`It's ${match.players[match.cur].name}'s turn`); return; }
   }
   if(d.team!==undefined){ const t = settings.teamOf = settings.teamOf || []; settings.players.forEach((_,i)=>{ if(!Number.isInteger(t[i])) t[i] = teamOfP(i); }); t[+d.team] = +d.tv; save(); render(); return; }
+  if(d.step!==undefined){ setupStep = +d.step; window.scrollTo(0,0); render(); return; }
+  if(d.quick){
+    const base = { sets:1, legs:3, inMode:"straight", outMode:"double", points:true };
+    if(d.quick==="default" && prefs.defaults) Object.assign(settings, JSON.parse(JSON.stringify(prefs.defaults)));
+    else if(d.quick!=="last") Object.assign(settings, base, { game:d.quick });
+    setupStep = 3; save(); window.scrollTo(0,0); render(); return;
+  }
+  if(d.set==="game"){ settings.game = d.val; save(); setupStep = hasOptionsStep(d.val) ? 2 : 3; window.scrollTo(0,0); render(); return; }
   if(d.set==="teams"){ settings.teams = d.val; settings.teamOf = []; if(!["bull","random"].includes(settings.firstThrow)) settings.firstThrow = "0"; save(); render(); return; }
   if(d.set){ settings[d.set] = d.set==="points" ? d.val==="true" : ["lives","shRounds","cuRounds"].includes(d.set) ? +d.val : d.val; save(); render(); return; }
   if(d.cat){ const c = CATS.find(x=>x[0]===d.cat); if(catOf(settings.game)!==d.cat) settings.game = c[2][0]; save(); render(); return; }
@@ -2863,6 +2922,7 @@ app.addEventListener("click", e=>{
     case "nextGame": dialog = null; screen = "setup"; render(); break;
     case "endConfirm": dialog = "endConfirm"; render(); break;
     case "endSession": endSession(); break;
+    case "stepBack": setupStep = setupStep===3 && !hasOptionsStep(settings.game) ? 1 : Math.max(1, setupStep-1); if(setupStep===0) setupStep = 1; window.scrollTo(0,0); render(); break;
     case "endSessionKeep": endKeep = true; endSession(); break;
     case "endSessionDrop": endKeep = false; endSession(); break;
     case "abandon": dialog = "abandon"; render(); break;
