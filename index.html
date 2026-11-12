@@ -1336,7 +1336,8 @@ const CO = ["c121","catch40"];
 const isCO = g => CO.includes(g);
 const coStart = g => g==="c121" ? 121 : 61;
 const coMaxDarts = g => g==="c121" ? 9 : 6;
-const coAttempts = m => m.game==="c121" ? (m.opts.coAttempts||10) : 40;
+const coAttempts = m => m.game==="c121" ? Infinity : 40;
+const C121_TOP = 170;
 const coPts = d => d<=2 ? 3 : d===3 ? 2 : d<=6 ? 1 : 0;
 const HAMMER_BASE = [20,19,18,"W",17,16,15,"W"], WILD_POOL = [12,13,14,15,16,17,18,19,20,25];
 const segVal = (n,m) => n===25 ? 25*m : n*m;
@@ -1356,7 +1357,7 @@ function gameName(g, o){
   if(g==="shanghai") return `Shanghai · ${o.shRounds} rounds`;
   if(g==="hammer") return `Hammer Cricket · ${o.hammerMode==="masters" ? "Masters" : "Open"}`;
   if(g==="countup") return `Count-Up · ${o.cuRounds} rounds`;
-  if(g==="c121") return `121 Ladder · ${o.coAttempts||10} attempts`;
+  if(g==="c121") return "121 Ladder";
   if(g==="catch40") return "Catch 40";
   if(isRG(g)) return NAMES[g];
   return `${g} · ${o.inMode==="double"?"Double in":"Straight in"}, ${o.outMode==="double"?"double out":"straight out"}`;
@@ -1546,8 +1547,10 @@ function coAttemptEnd(i, ok, total){
   const g = match.game, P = match.leg.p[i], t = P.target;
   let note = "";
   if(g==="c121"){
-    if(ok){ P.fin++; P.best = Math.max(P.best, t); if(total<=3 && t>P.banker){ P.banker = t; note = "banker"; } P.target = t+1; }
-    else P.target = Math.max(P.banker || coStart(g), t-1);
+    /* skip numbers that can't be checked out in 3 darts (159, 162, 163, 165, 166, 168, 169) */
+    const step = (n,d)=>{ do n += d; while(n<C121_TOP && n>coStart(g) && !checkout(n,3,true)); return n; };
+    if(ok){ P.fin++; P.best = Math.max(P.best, t); if(total<=3 && t>P.banker){ P.banker = t; note = "banker"; } P.target = t>=C121_TOP ? t : step(t,1); if(t>=C121_TOP) P.top = true; }
+    else P.target = Math.max(P.banker || coStart(g), step(t,-1));
   } else {
     const pts = ok ? coPts(total) : 0; P.pts += pts; if(ok) P.fin++; P.target = t+1; note = pts;
   }
@@ -1555,11 +1558,12 @@ function coAttemptEnd(i, ok, total){
   P.att++; P.used = 0; P.left = P.target;
   const last = match.tlog[match.tlog.length-1]; if(last && last.k==="co"){ last.end = true; last.ok = ok; if(note==="banker") last.banker = true; if(g==="catch40") last.pts = note; }
   if(ok) toast(g==="catch40" ? `+${note} pt${note===1?"":"s"}` : note==="banker" ? `Banker ${t}!` : `${t} ✓`);
-  if(P.att >= coAttempts(match)) P.out = true;
+  if(P.att >= coAttempts(match) || P.top) P.out = true;
+  if(P.top) toast("170 done! Ladder complete");
 }
-function coNext(){
+function coNext(force){
   const P = match.leg.p;
-  if(P.every(q=>q.out)){
+  if(force || P.every(q=>q.out)){
     const key = q => match.game==="c121" ? q.best*1000 + q.fin : q.pts;
     const b = Math.max(...P.map(key)), winners = P.map((q,i)=>i).filter(i=>key(P[i])===b);
     winners.forEach(w=>match.players[w].legsTotal++);
@@ -1939,7 +1943,7 @@ function rulesFor(g, o){
     "Finish it and you move up one (122, 123…). Miss and you drop back one.",
     "Banker: check out in 3 darts or fewer and that number is locked in. You can never drop below it.",
     "Bust (going below 0 or leaving 1) scores nothing for that visit and uses its 3 darts.",
-    `You get ${o.coAttempts||10} attempts. Your score is the highest number you checked out.`
+    "Keep climbing until you check out 170 or tap End game. Your score is the highest number you checked out."
   ];
   if(g==="catch40") return [
     "Check out every number from 61 to 100 in order: 40 checkouts, each finishing on a double.",
@@ -2058,7 +2062,6 @@ function gameOptionsHtml(s){
         <div class="label">501: finish</div><div class="seg small">${segBtns("outMode", [["double","Double out"],["straight","Straight out"]], s.outMode)}</div>
         <div class="label">Cricket scoring</div><div class="seg small">${segBtns("points", [["true","With points"],["false","No points"]], s.points)}</div>`
       : s.game==="hammer" ? `<div class="label">Mode</div><div class="seg small">${segBtns("hammerMode", [["open","Open"],["masters","Masters"]], s.hammerMode||"open")}</div>`
-      : s.game==="c121" ? `<div class="label">Attempts</div><div class="seg small">${segBtns("coAttempts", [["10","10 attempts"],["20","20 attempts"],["30","30 attempts"]], String(s.coAttempts||10))}</div>`
       : s.game==="countup" ? `<div class="label">Rounds</div><div class="seg small">${segBtns("cuRounds", [["8","8 rounds"],["10","10 rounds"]], s.cuRounds)}</div>`
       : is01(s.game) ? `
         <div class="label">Start</div><div class="seg small">${segBtns("inMode", [["straight","Straight in"],["double","Double in"]], s.inMode)}</div>
@@ -2215,7 +2218,8 @@ function renderCOBoard(){
       if(r===q.hist.length && !q.out) return `<td class="${i===match.cur&&!match.over?"now":""}">${q.target}<small>${q.left<q.target ? `${q.left} left · ` : ""}${q.used}/${coMaxDarts(g)} darts</small></td>`;
       return "<td></td>"; }).join("")}</tr>`;
   }
-  return `${bigTarget()}<table class="ht co"><tr><th class="rt">#</th>${match.players.map((pl,i)=>`<th class="${i===match.cur&&!match.over?"on":""}">${esc(pl.name)}</th>`).join("")}</tr>${body}</table>`;
+  const endBtn = g==="c121" && !match.over ? `<div style="text-align:center;padding:10px"><button type="button" class="ghost small" data-act="coEnd">End game</button></div>` : "";
+  return `${bigTarget()}<table class="ht co"><tr><th class="rt">#</th>${match.players.map((pl,i)=>`<th class="${i===match.cur&&!match.over?"on":""}">${esc(pl.name)}</th>`).join("")}</tr>${body}</table>${endBtn}`;
 }
 function renderCODock(){
   const g = match.game, P = match.leg.p[match.cur], dis = match.over ? "disabled" : "";
@@ -2290,7 +2294,7 @@ function renderBar(){
   const o = match.opts, n = match.players.length;
   const kil = oneGame(match.game);
   const rr = isRG(match.game) ? rgRounds() : null;
-  const t = isCO(match.game) ? `${match.game==="catch40" ? "Target" : "Attempt"} ${roundNo()}/${coAttempts(match)}` : match.game==="halveit" ? `Round ${roundNo()}/12` : rr ? `${match.game==="golf"?"Hole":match.game==="baseball"?"Inning":"Round"} ${roundNo()}/${rr.length}` : match.game==="atc" ? `Turn ${roundNo()}` : kil ? `${match.leg.p.filter(q=>!q.out).length} of ${n} left` : `${o.sets>1?`Set ${match.setNo} · `:""}Leg ${match.legNo}`;
+  const t = isCO(match.game) ? (match.game==="catch40" ? `Target ${roundNo()}/40` : `Attempt ${roundNo()}`) : match.game==="halveit" ? `Round ${roundNo()}/12` : rr ? `${match.game==="golf"?"Hole":match.game==="baseball"?"Inning":"Round"} ${roundNo()}/${rr.length}` : match.game==="atc" ? `Turn ${roundNo()}` : kil ? `${match.leg.p.filter(q=>!q.out).length} of ${n} left` : `${o.sets>1?`Set ${match.setNo} · `:""}Leg ${match.legNo}`;
   let s = "";
   if(n===2 && !kil) s = o.sets>1 ? `${match.players[0].sets}-${match.players[1].sets} · ${match.players[0].legs}-${match.players[1].legs}` : `${match.players[0].legs} - ${match.players[1].legs}`;
   return `<div class="bar"><button type="button" class="ib" data-act="quit" aria-label="Menu">✕</button>
@@ -2636,6 +2640,7 @@ function renderOverlay(){
     <div class="btns"><button type="button" class="secondary" data-act="rules">How to play ${esc(shortName(match.game))}</button>
     ${profilesOn() && (!online || online.host) ? `<button type="button" class="secondary" data-act="endConfirm">End session &amp; email results</button>` : ""}
     <button type="button" class="primary" data-act="toSetup">Leave match (resume later)</button>
+    ${match.game==="c121" && !match.over ? `<button type="button" class="secondary" data-act="coEnd">End game now (keeps the result)</button>` : ""}
     ${!online && !(match.over && match.over.type==="match") ? `<button type="button" class="secondary" data-act="abandon">End match without finishing</button>` : ""}
     <button type="button" class="secondary" data-act="closeDlg">Keep playing</button></div></div></div>`;
   if(coAsk) return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="coh">
@@ -2679,7 +2684,7 @@ function renderOverlay(){
   else if(o.type==="match" && isCO(match.game)){
     const P = match.leg.p[o.winner];
     title = o.tie ? `Tie: ${o.tie.map(i=>esc(match.players[i].name)).join(" & ")}` : match.players.length===1 ? `${shortName(match.game)} complete` : `${w} wins ${esc(shortName(match.game))}`;
-    line = match.game==="c121" ? `Highest checkout ${P.best || "–"} · ${P.fin} of ${coAttempts(match)} finished${P.banker ? ` · banker ${P.banker}` : ""}` : `${P.pts} of 120 points · ${P.fin} of 40 finished`;
+    line = match.game==="c121" ? `${P.top ? "Made it to 170! · " : ""}Highest checkout ${P.best || "–"} · ${P.fin} of ${P.att} finished${P.banker ? ` · banker ${P.banker}` : ""}` : `${P.pts} of 120 points · ${P.fin} of 40 finished`;
   }
   else if(o.type==="match"){ title = `${w} wins the match`; line = match.opts.sets>1 ? `Sets ${setScore}` : `Legs ${legScore}`; }
   else if(o.type==="set"){ title = `${w} wins set ${match.setNo}`; line = `Legs ${legScore} · Sets ${setScore}`; }
@@ -2776,7 +2781,7 @@ function bigTarget(){
     else if(g==="countup"){ label = `Round ${roundNo()} of ${r.length}`; val = "ANY"; sub = "Score as much as you can"; }
   } else if(isCO(g)){
     const P = match.leg.p[match.cur], md = coMaxDarts(g);
-    if(g==="c121"){ label = `Attempt ${P.att+1} of ${coAttempts(match)} · target ${P.target}`; val = String(P.left);
+    if(g==="c121"){ label = `Attempt ${P.att+1} · target ${P.target} of ${C121_TOP}`; val = String(P.left);
       sub = `${md - P.used} darts left${P.banker ? ` · 🔒 never below ${P.banker}` : ""} · finish in 3 = banker`; }
     else { label = `Target ${P.att+1} of 40 · ${P.target}`; val = String(P.left);
       sub = `${md - P.used} darts left · 2 darts 3 pts · 3 darts 2 · 4–6 darts 1`; }
@@ -3122,6 +3127,7 @@ app.addEventListener("click", e=>{
     case "reuse": reuseNumbers(); break;
     case "cancelFin": pending = null; render(); break;
     case "cancelCo": coAsk = null; render(); break;
+    case "coEnd": askConfirm(`End the game now? ${match.players.length>1 ? "Whoever has the highest checkout wins." : "Your highest checkout is your score."} It counts as a finished game.`, "End game", ()=>{ snapshot(); coNext(true); save(); render(); }); break;
     case "nextLeg": nextLeg(); break;
     case "corkWin": corkWinner(+d.i); break;
     case "corkGame": corkGame(d.g); break;
