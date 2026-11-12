@@ -1433,6 +1433,11 @@ function startMatch(keep){
   }
   else if(teamsOn()) sides = teamGroups().filter(g=>g.length).map(g=>({ name:g.map(nm).join(" & "), pid:null, members:g.map(i=>({ name:nm(i), pid:pd(i) })) }));
   else sides = settings.players.map((_,i)=>({ name:nm(i), pid:pd(i) }));
+  /* 121 Ladder is never head-to-head: everyone climbs one shared ladder (also on Rematch / Same as last time) */
+  if(settings.game==="c121" && sides.length>1){
+    const all = sides.flatMap(x=>x.members ? x.members : [{ name:x.name, pid:x.pid||null }]);
+    sides = [{ name: all.map(m=>m.name).join(" & "), pid:null, members: all }];
+  }
   const names = sides.map(x=>x.name), pids = sides.map(x=>x.pid||null);
   match = {
     game: settings.game==="medley" ? "501" : settings.game,
