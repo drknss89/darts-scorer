@@ -29,6 +29,9 @@ which simply loads this site, so pushing to `main` updates the Android app too.
   - Killer: `killerDart`, `pickNumber`.
   - Halve-It: `halveDart`, `halveTotal`.
   - Round games (Shanghai, Baseball, Golf, Around the Clock, Bob's 27, Count-Up, Hammer Cricket): `RG`, `rgDart`, `rgEndTurn`, `finishRG`.
+  - Checkout practice (Practice tab), from Ryan's videos: `CO`/`isCO`, typed visits via `coVisit`, darts-used prompt `coAsk` → `coFinish`, `coAttemptEnd`, `coNext`; board `renderCOBoard`, keypad `renderCODock`; turn log `k:"co"`.
+    - 121 Ladder (`c121`): start 121, 9 darts per attempt, double out. Finish = up one, miss = down one, never below the banker (a number finished in ≤3 darts) or 121. `opts.coAttempts` 10/20/30. Score = highest number checked out.
+    - Catch 40 (`catch40`): 61→100, 6 darts each; finish in 2 darts = 3 pts, 3 = 2, 4–6 = 1. Max 120.
   - Medley (501/Cricket legs, bull-off decider): `match.base==="medley"` and `match.game` = the current leg's game, `medleyKind`, `corkWinner`, `corkGame`.
 - Turn log for stats and recaps: `tl({...})` → `match.tlog`. Stats: `playerStats`, `buildRecord`. Recap email/HTML: `reportHtml`.
 - Online play: `hostOnline`, `lookupGame`, `confirmJoin`, `pushState`, `listen`, `isMyTurn`, `claims`.

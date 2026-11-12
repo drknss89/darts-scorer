@@ -351,6 +351,13 @@ h1 .ring{width:38px;height:38px;flex:none;background:url(data:image/png;base64,i
 .choice.qp{padding:14px 16px}
 .choice.qp b{font-size:24px}
 
+/* checkout practice */
+.ht.co td small{display:block;font-size:12px;font-weight:600;opacity:.8}
+.ht.co td.ok{color:#6fe39a}
+.ht.co td.no{color:var(--muted)}
+.ht.co td.now{color:var(--hl2);font-weight:800}
+.big .lock{font-size:.35em;vertical-align:top;margin-left:2px}
+
 /* bar + entry + keypad */
 .bar{display:grid;grid-template-columns:44px 1fr auto 44px;align-items:center;gap:8px;margin:0 6px;padding:6px 8px;border-radius:10px 10px 0 0;background:linear-gradient(var(--accent),var(--accent-lo))}
 .bar .ib{width:36px;height:34px;border-radius:6px;display:grid;place-items:center;font-size:20px;font-weight:700;background:rgba(0,0,0,.25);color:#fff}
@@ -413,13 +420,13 @@ const CATS = [
   ["x01","X01",["601","501","301","101","medley"]],
   ["cricket","Cricket",["cricket","cutthroat","hammer"]],
   ["party","Party",["killer","halveit","shanghai","baseball","golf"]],
-  ["practice","Practice",["atc","bobs","countup"]]
+  ["practice","Practice",["atc","bobs","countup","c121","catch40"]]
 ];
 const catOf = g => (CATS.find(c=>c[2].includes(g)) || CATS[0])[0];
 const KEY = "dartsScorer.v2";
 const app = document.getElementById("app");
 
-let settings = { game:"501", inMode:"straight", outMode:"double", points:true, lives:3, shRounds:7, cuRounds:8, firstThrow:"0", hammerMode:"open", sets:1, legs:3, emails:[], players:["Home","Away"], teams:"0", teamOf:[] };
+let settings = { game:"501", inMode:"straight", outMode:"double", points:true, lives:3, shRounds:7, cuRounds:8, coAttempts:10, firstThrow:"0", hammerMode:"open", sets:1, legs:3, emails:[], players:["Home","Away"], teams:"0", teamOf:[] };
 let match = null, hist = [], screen = "setup", dialog = null, entry = "", pending = null, mod = 1;
 
 /* ---------- storage ---------- */
@@ -624,6 +631,8 @@ function placeOrder(m){
     return idx.filter(i=>!outs.includes(i)).concat(outs.slice().reverse());
   }
   if(g==="atc") return idx.slice().sort((a,b)=>(P[b].pos-P[a].pos) || (P[a].darts-P[b].darts));
+  if(g==="c121") return idx.slice().sort((a,b)=>(P[b].best-P[a].best) || (P[b].fin-P[a].fin));
+  if(g==="catch40") return idx.slice().sort((a,b)=>(P[b].pts-P[a].pts) || (P[b].fin-P[a].fin));
   if(g==="golf") return idx.slice().sort((a,b)=>P[a].total-P[b].total);
   if(g==="bobs") return idx.slice().sort((a,b)=>((P[a].out?1:0)-(P[b].out?1:0)) || (P[b].turns-P[a].turns) || (P[b].total-P[a].total));
   return idx.slice().sort((a,b)=>P[b].total-P[a].total);
@@ -665,6 +674,16 @@ function playerStats(m, i){
     if(m.opts.sets>1) rows.push(["Sets won", pl.sets]);
     rows.push(["Total marks", marks], ["5+ mark turns", t.filter(e=>e.marks>=5).length], ["Best turn", Math.max(0,...t.map(e=>e.marks))+" marks"], ["Darts thrown", darts]);
     raw.cr = { darts, marks, legsWon:legsWon.length };
+  } else if(isCO(g)){
+    const t = T.filter(e=>e.k==="co"), ends = t.filter(e=>e.end), ok = ends.filter(e=>e.ok);
+    const avgD = ok.length ? r1(ok.reduce((a,e)=>a+e.total,0)/ok.length) : "–";
+    if(g==="c121"){
+      rows.push(["Highest checkout", P.best || "–"], ["Finished", `${ok.length} of ${ends.length}`], ["Banker", P.banker || "–"], ["Finished in 3 darts", ok.filter(e=>e.total<=3).length], ["Avg darts per finish", avgD], ["Darts thrown", P.darts]);
+      raw.score = P.best || null;
+    } else {
+      rows.push(["Points", `${P.pts} / 120`], ["Finished", `${ok.length} of 40`], ["In 2 darts", ok.filter(e=>e.total<=2).length], ["In 3 darts", ok.filter(e=>e.total===3).length], ["In 4–6 darts", ok.filter(e=>e.total>3).length], ["Darts thrown", P.darts]);
+      raw.score = P.pts;
+    }
   } else if(g==="killer"){
     rows.push(["Lives taken", P.taken], ["Darts thrown", P.darts]);
     raw.score = P.taken;
@@ -1309,14 +1328,21 @@ function accountOverlay(){
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const firstTo = n => Math.floor(n/2) + 1;
 const is01 = g => /^\d+$/.test(g);
-const NAMES = { medley:"Medley", cricket:"Cricket", cutthroat:"Cut-Throat", hammer:"Hammer Cricket", killer:"Killer", halveit:"Halve-It", shanghai:"Shanghai", baseball:"Baseball", golf:"Golf", atc:"Around the Clock", bobs:"Bob's 27", countup:"Count-Up" };
+const NAMES = { c121:"121 Ladder", catch40:"Catch 40", medley:"Medley", cricket:"Cricket", cutthroat:"Cut-Throat", hammer:"Hammer Cricket", killer:"Killer", halveit:"Halve-It", shanghai:"Shanghai", baseball:"Baseball", golf:"Golf", atc:"Around the Clock", bobs:"Bob's 27", countup:"Count-Up" };
 const shortName = g => NAMES[g] || g;
 const RG = ["shanghai","baseball","golf","atc","bobs","countup","hammer"];
+/* checkout practice: 121 Ladder and Catch 40 (typed visits, double out) */
+const CO = ["c121","catch40"];
+const isCO = g => CO.includes(g);
+const coStart = g => g==="c121" ? 121 : 61;
+const coMaxDarts = g => g==="c121" ? 9 : 6;
+const coAttempts = m => m.game==="c121" ? (m.opts.coAttempts||10) : 40;
+const coPts = d => d<=2 ? 3 : d===3 ? 2 : d<=6 ? 1 : 0;
 const HAMMER_BASE = [20,19,18,"W",17,16,15,"W"], WILD_POOL = [12,13,14,15,16,17,18,19,20,25];
 const segVal = (n,m) => n===25 ? 25*m : n*m;
 const isRG = g => RG.includes(g);
 const isCricket = g => g==="cricket" || g==="cutthroat";
-const oneGame = g => g==="killer" || g==="halveit" || isRG(g);
+const oneGame = g => g==="killer" || g==="halveit" || isRG(g) || isCO(g);
 const ATC_T = [...Array(20).keys()].map(k=>k+1).concat([25]);
 const HALVE = [20,"EVEN",19,"ODD",18,"TRIPLE",17,"DOUBLE",16,"CHOICE",15,"BULL"];
 const halveLabel = t => typeof t==="number" ? String(t) : t.charAt(0)+t.slice(1).toLowerCase();
@@ -1330,6 +1356,8 @@ function gameName(g, o){
   if(g==="shanghai") return `Shanghai · ${o.shRounds} rounds`;
   if(g==="hammer") return `Hammer Cricket · ${o.hammerMode==="masters" ? "Masters" : "Open"}`;
   if(g==="countup") return `Count-Up · ${o.cuRounds} rounds`;
+  if(g==="c121") return `121 Ladder · ${o.coAttempts||10} attempts`;
+  if(g==="catch40") return "Catch 40";
   if(isRG(g)) return NAMES[g];
   return `${g} · ${o.inMode==="double"?"Double in":"Straight in"}, ${o.outMode==="double"?"double out":"straight out"}`;
 }
@@ -1357,7 +1385,9 @@ function checkout(s, left, dbl){
 /* ---------- match engine ---------- */
 function newLeg(){
   const g = match.game;
-  const p = match.players.map(() => is01(g)
+  const p = match.players.map(() => isCO(g)
+    ? { target:coStart(g), left:coStart(g), used:0, att:0, banker:0, best:0, fin:0, pts:0, darts:0, turns:0, out:false, hist:[] }
+    : is01(g)
     ? { score:+g, isIn: match.opts.inMode==="straight", darts:0, turns:0 }
     : g==="halveit"
     ? { total:0, darts:0, turns:0, hist:[] }
@@ -1372,7 +1402,7 @@ function tl(e){ if(!match.tlog) match.tlog = []; e.s = match.setNo; e.l = match.
   if(match.teams && ["01","cr","hv","rg","ki"].includes(e.k)){ const w = upIdx(e.p); if(w!==null) e.w = w; }
   match.tlog.push(e); return match.tlog.length-1; }
 /* ---------- teams: each side is one "player"; partners take turns (A1, B1, A2, B2) ---------- */
-const teamable = g => !["killer","bobs"].includes(g);
+const teamable = g => !["killer","bobs","c121","catch40"].includes(g);
 const TEAM_L = ["A","B","C","D"];
 function teamsOn(){ const k = +settings.teams||0; return k>=2 && teamable(settings.game) && settings.players.length>k; }
 const teamOfP = i => { const k = +settings.teams||0, t = (settings.teamOf||[])[i]; return Number.isInteger(t) && t<k ? t : i % k; };
@@ -1395,7 +1425,7 @@ function startMatch(keep){
   match = {
     game: settings.game==="medley" ? "501" : settings.game,
     base: settings.game==="medley" ? "medley" : null,
-    opts: { inMode:settings.inMode, outMode:settings.outMode, points: settings.game==="cutthroat" ? true : settings.points, lives:settings.lives, shRounds:settings.shRounds, cuRounds:settings.cuRounds, hammerMode:settings.hammerMode||"open",
+    opts: { inMode:settings.inMode, outMode:settings.outMode, points: settings.game==="cutthroat" ? true : settings.points, lives:settings.lives, shRounds:settings.shRounds, cuRounds:settings.cuRounds, coAttempts:settings.coAttempts||10, hammerMode:settings.hammerMode||"open",
       cutthroat: settings.game==="cutthroat",
       sets: oneGame(settings.game) ? 1 : settings.sets, legs: oneGame(settings.game) ? 1 : settings.game==="medley" ? Math.max(3, settings.legs|1) : settings.legs },
     players: names.map((name,i) => Object.assign({ name, pid: pids[i] || null, sets:0, legs:0, legsTotal:0, cDarts:0, cScore:0 }, sides[i].members ? { members: sides[i].members } : {})),
@@ -1416,13 +1446,13 @@ function startMatch(keep){
   hist = []; entry = ""; pending = null; screen = "game"; save(); render();
 }
 function snapshot(){ hist.push(JSON.stringify(match)); if(hist.length>400) hist.shift(); match.by = deviceId; }
-function undo(){ if(!hist.length) return; match = JSON.parse(hist.pop()); entry = ""; pending = null; save(); render(); }
+function undo(){ if(!hist.length) return; match = JSON.parse(hist.pop()); entry = ""; pending = null; coAsk = null; save(); render(); }
 function nextPlayer(){
   const n = match.players.length;
   if(match.teams){ const L = match.leg; L.tc = L.tc || []; L.tc[match.cur] = (L.tc[match.cur]||0) + 1; }
   for(let k=0;k<n;k++){
     match.cur = (match.cur+1) % n;
-    if((match.game!=="killer" && match.game!=="bobs") || !match.leg.p[match.cur].out) return;
+    if((match.game!=="killer" && match.game!=="bobs" && !isCO(match.game)) || !match.leg.p[match.cur].out) return;
   }
 }
 
@@ -1484,8 +1514,63 @@ function killerDart(n, m){
 }
 
 /* 01: whole-turn score entry */
+let coAsk = null;   // { opts:[darts] } how many darts the checkout took
+function coVisit(v){
+  entry = "";
+  const i = match.cur, P = match.leg.p[i], left = P.left, room = coMaxDarts(match.game) - P.used;
+  if(!POSSIBLE.has(v)){ msg(`${v} can't be scored with 3 darts`); render(); return; }
+  if(v===left){
+    if(!checkout(left,3,true)){ msg(`${left} can't be finished on a double in 3 darts`); render(); return; }
+    let min = 1; while(min<3 && !checkout(left,min,true)) min++;
+    const opts = [1,2,3].filter(d=>d>=min && d<=room);
+    if(opts.length===1){ coFinish(opts[0]); return; }
+    coAsk = { opts }; render(); return;
+  }
+  snapshot();
+  const bust = v>left || left-v===1;
+  P.darts += 3; P.turns++; P.used += 3;
+  if(!bust) P.left -= v; else toast("Bust", true);
+  tl({ k:"co", p:i, v: bust ? 0 : v, bust, start:left, left:P.left, target:P.target });
+  if(P.used >= coMaxDarts(match.game)) coAttemptEnd(i, false, 0);
+  coNext(); save(); render();
+}
+function coFinish(d){
+  coAsk = null; snapshot();
+  const i = match.cur, P = match.leg.p[i], total = P.used + d;
+  P.darts += d; P.turns++;
+  tl({ k:"co", p:i, v:P.left, co:true, darts:d, total, start:P.left, left:0, target:P.target });
+  coAttemptEnd(i, true, total);
+  coNext(); save(); render();
+}
+function coAttemptEnd(i, ok, total){
+  const g = match.game, P = match.leg.p[i], t = P.target;
+  let note = "";
+  if(g==="c121"){
+    if(ok){ P.fin++; P.best = Math.max(P.best, t); if(total<=3 && t>P.banker){ P.banker = t; note = "banker"; } P.target = t+1; }
+    else P.target = Math.max(P.banker || coStart(g), t-1);
+  } else {
+    const pts = ok ? coPts(total) : 0; P.pts += pts; if(ok) P.fin++; P.target = t+1; note = pts;
+  }
+  P.hist.push({ t, ok, total, note });
+  P.att++; P.used = 0; P.left = P.target;
+  const last = match.tlog[match.tlog.length-1]; if(last && last.k==="co"){ last.end = true; last.ok = ok; if(note==="banker") last.banker = true; if(g==="catch40") last.pts = note; }
+  if(ok) toast(g==="catch40" ? `+${note} pt${note===1?"":"s"}` : note==="banker" ? `Banker ${t}!` : `${t} ✓`);
+  if(P.att >= coAttempts(match)) P.out = true;
+}
+function coNext(){
+  const P = match.leg.p;
+  if(P.every(q=>q.out)){
+    const key = q => match.game==="c121" ? q.best*1000 + q.fin : q.pts;
+    const b = Math.max(...P.map(key)), winners = P.map((q,i)=>i).filter(i=>key(P[i])===b);
+    winners.forEach(w=>match.players[w].legsTotal++);
+    match.over = { type:"match", winner:winners[0], tie: winners.length>1 ? winners : null, legScore: match.players.map(p=>p.legs), darts:P[winners[0]].darts };
+    match.turn = []; return;
+  }
+  nextPlayer();
+}
 function submitScore(v){
   if(!match || match.over) return;
+  if(isCO(match.game)) return coVisit(v);
   if(match.game==="halveit") return halveTotal(v);
   if(match.game==="countup") return countupTotal(v);
   entry = "";
@@ -1829,6 +1914,8 @@ function corkGame(g){
 /* ---------- stats ---------- */
 function avgFor(i){
   const pl = match.players[i], P = match.leg.p[i], live = !match.over;
+  if(match.game==="c121") return P.best ? `Best ${P.best}` : "–";
+  if(match.game==="catch40") return `${P.pts}/120`;
   const darts = pl.cDarts + (live ? P.darts : 0);
   if(match.game==="killer") return pl.cScore + (live ? P.taken : 0);
   if(match.game==="halveit") return P.total;
@@ -1847,6 +1934,20 @@ function msg(text){ const t=document.createElement("div"); t.className="toast ms
 /* ---------- rules ---------- */
 function rulesFor(g, o){
   const lives = o.lives || 3;
+  if(g==="c121") return [
+    "A checkout ladder. Start on 121. You get 9 darts (3 visits) to check it out, finishing on a double.",
+    "Finish it and you move up one (122, 123…). Miss and you drop back one.",
+    "Banker: check out in 3 darts or fewer and that number is locked in. You can never drop below it.",
+    "Bust (going below 0 or leaving 1) scores nothing for that visit and uses its 3 darts.",
+    `You get ${o.coAttempts||10} attempts. Your score is the highest number you checked out.`
+  ];
+  if(g==="catch40") return [
+    "Check out every number from 61 to 100 in order: 40 checkouts, each finishing on a double.",
+    "You get 6 darts (2 visits) for each number, then move on whether you finished it or not.",
+    "Points for each finish: 2 darts = 3 points, 3 darts = 2 points, 4 to 6 darts = 1 point, not finished = 0.",
+    "Bust (going below 0 or leaving 1) scores nothing for that visit and uses its 3 darts.",
+    "The maximum is 120. Most points wins."
+  ];
   if(is01(g)) return [
     `Everyone starts on ${g}. Each turn you throw 3 darts and their total comes off your score.`,
     o.inMode==="double" ? "Double in: your score doesn't start dropping until you hit a double. That double and everything after it counts." : "Straight in: every dart counts from the first throw.",
@@ -1957,6 +2058,7 @@ function gameOptionsHtml(s){
         <div class="label">501: finish</div><div class="seg small">${segBtns("outMode", [["double","Double out"],["straight","Straight out"]], s.outMode)}</div>
         <div class="label">Cricket scoring</div><div class="seg small">${segBtns("points", [["true","With points"],["false","No points"]], s.points)}</div>`
       : s.game==="hammer" ? `<div class="label">Mode</div><div class="seg small">${segBtns("hammerMode", [["open","Open"],["masters","Masters"]], s.hammerMode||"open")}</div>`
+      : s.game==="c121" ? `<div class="label">Attempts</div><div class="seg small">${segBtns("coAttempts", [["10","10 attempts"],["20","20 attempts"],["30","30 attempts"]], String(s.coAttempts||10))}</div>`
       : s.game==="countup" ? `<div class="label">Rounds</div><div class="seg small">${segBtns("cuRounds", [["8","8 rounds"],["10","10 rounds"]], s.cuRounds)}</div>`
       : is01(s.game) ? `
         <div class="label">Start</div><div class="seg small">${segBtns("inMode", [["straight","Straight in"],["double","Double in"]], s.inMode)}</div>
@@ -2058,6 +2160,8 @@ const MARK = [
 function modeText(){
   const o = match.opts;
   if(match.game==="killer") return `${o.lives} LIVES`;
+  if(match.game==="c121") return "DOUBLE OUT";
+  if(match.game==="catch40") return "CATCH 40";
   if(match.game==="cutthroat") return "CUT-THROAT";
   if(isRG(match.game)){
     if(match.game==="countup") return "ANY";
@@ -2071,11 +2175,13 @@ function modeText(){
   if(!is01(match.game)) return o.points ? "PTS" : "NO PTS";
   return (o.inMode==="double"?"DI":"SI") + (o.outMode==="double"?" · DO":" · SO");
 }
-function roundNo(){ if(isRG(match.game)){ const r = rgRounds(); return r ? Math.min(match.leg.round, r.length-1)+1 : match.leg.p[match.cur].turns+1; }
+function roundNo(){ if(isCO(match.game)) return Math.min(match.leg.p[match.cur].att+1, coAttempts(match));
+  if(isRG(match.game)){ const r = rgRounds(); return r ? Math.min(match.leg.round, r.length-1)+1 : match.leg.p[match.cur].turns+1; }
   return match.game==="halveit" ? Math.min(match.leg.round,11)+1 : match.leg.p[match.cur].turns + 1; }
 function L_round(){ return match.leg.phase==="pick" ? "Throw for numbers" : `Round ${roundNo()}`; }
 function bigValue(i){
   const P = match.leg.p[i];
+  if(isCO(match.game)) return match.game==="c121" ? `${P.target}${P.banker ? `<small class="lock" title="Banker">🔒</small>` : ""}` : P.pts;
   if(is01(match.game)){
     if(i===match.cur && entry && !match.over){ const v = entryValue(); if(v!==null && v<=P.score) return `<span class="prev">${P.score - v}</span>`; }
     return P.score;
@@ -2091,8 +2197,42 @@ function sideCard(i, cls){
   const setsLine = match.opts.sets>1 ? `<span>S${pl.sets}</span>` : "";
   return `<div class="side ${cls} ${active?"active":""}">
     <div class="nmbar ${pl.members?"team":""}">${pl.members ? (()=>{ const k = upIdx(i); return pl.members.map((m,j)=>j===k ? `<b>${esc(m.name)}</b>` : `<small>${esc(m.name)}</small>`).join(" "); })() : esc(pl.name)}</div>
-    <div class="scorebox"><div class="stk">${match.game==="halveit" ? halveLast(i) : isRG(match.game) ? rgLast(i) : `<span class="avg">${avgText(i)}</span><span>${pl.legs}</span>${setsLine}`}</div>
+    <div class="scorebox"><div class="stk">${isCO(match.game) ? coSide(i) : match.game==="halveit" ? halveLast(i) : isRG(match.game) ? rgLast(i) : `<span class="avg">${avgText(i)}</span><span>${pl.legs}</span>${setsLine}`}</div>
     <div class="big">${bigValue(i)}</div></div></div>`;
+}
+function coSide(i){
+  const P = match.leg.p[i];
+  return match.game==="c121" ? `<span class="avg">Best ${P.best||"–"}</span><span>${P.fin} ✓</span>` : `<span class="avg">${Math.min(P.target,100)}</span><span>${P.fin}/40</span>`;
+}
+function renderCOBoard(){
+  const L = match.leg, g = match.game, n = match.players.length, rows = Math.max(1, ...L.p.map(q=>q.hist.length + (q.out ? 0 : 1)));
+  const cell = h => !h ? "<td></td>" : `<td class="${h.ok?"ok":"no"}">${h.t}<small>${h.ok ? `✓ ${h.total} darts${g==="catch40" ? ` · +${h.note}` : h.note==="banker" ? " · 🔒" : ""}` : g==="catch40" ? "✗ · 0" : "✗"}</small></td>`;
+  let body = "";
+  for(let r=0;r<rows;r++){
+    const cur = !match.over && L.p[match.cur].hist.length===r;
+    body += `<tr class="${cur?"cur":""}" ${cur?'id="hcur"':""}><td class="rt">${r+1}</td>${L.p.map((q,i)=>{ const h = q.hist[r];
+      if(h) return cell(h);
+      if(r===q.hist.length && !q.out) return `<td class="${i===match.cur&&!match.over?"now":""}">${q.target}<small>${q.left<q.target ? `${q.left} left · ` : ""}${q.used}/${coMaxDarts(g)} darts</small></td>`;
+      return "<td></td>"; }).join("")}</tr>`;
+  }
+  return `${bigTarget()}<table class="ht co"><tr><th class="rt">#</th>${match.players.map((pl,i)=>`<th class="${i===match.cur&&!match.over?"on":""}">${esc(pl.name)}</th>`).join("")}</tr>${body}</table>`;
+}
+function renderCODock(){
+  const g = match.game, P = match.leg.p[match.cur], dis = match.over ? "disabled" : "";
+  const co = !match.over && prefs.hints ? checkout(P.left,3,true) : null;
+  const q = (v,off)=>`<button type="button" class="q" data-score="${v}" ${off||dis?"disabled":""}>${v}</button>`;
+  const k = d=>`<button type="button" class="k" data-digit="${d}" ${dis}>${d}</button>`;
+  return `<div class="dock">
+    <div class="throwing"><span class="tname">${esc(whoName())}</span> · ${P.left} left · darts ${P.used+1}–${P.used+3} of ${coMaxDarts(g)}</div>
+    ${calcLine()}<div class="entry"><button type="button" class="back" data-act="back">BACK</button>
+      <div class="disp ${entry?(isCalc(entry)?"typed calcd":"typed"):co?"co":""}">${entry ? calcText(entry) : co ? co.join(" · ") : `<span class="muted">Enter 3-dart score</span>`}</div>
+      <button type="button" class="miss" data-score="0" ${entry||dis?"disabled":""}>MISS</button></div>
+    <div class="pad">
+      ${q(qs(0),!!entry)}${k(1)}${k(2)}${k(3)}${q(qs(5),!!entry)}
+      ${q(qs(1),!!entry)}${k(4)}${k(5)}${k(6)}${q(qs(6),!!entry)}
+      ${q(qs(2),!!entry)}${k(7)}${k(8)}${k(9)}${q(qs(7),!!entry)}
+      ${calcRows(q,k,dis,true)}
+    </div></div>`;
 }
 function renderHeader(){
   const n = match.players.length;
@@ -2150,7 +2290,7 @@ function renderBar(){
   const o = match.opts, n = match.players.length;
   const kil = oneGame(match.game);
   const rr = isRG(match.game) ? rgRounds() : null;
-  const t = match.game==="halveit" ? `Round ${roundNo()}/12` : rr ? `${match.game==="golf"?"Hole":match.game==="baseball"?"Inning":"Round"} ${roundNo()}/${rr.length}` : match.game==="atc" ? `Turn ${roundNo()}` : kil ? `${match.leg.p.filter(q=>!q.out).length} of ${n} left` : `${o.sets>1?`Set ${match.setNo} · `:""}Leg ${match.legNo}`;
+  const t = isCO(match.game) ? `${match.game==="catch40" ? "Target" : "Attempt"} ${roundNo()}/${coAttempts(match)}` : match.game==="halveit" ? `Round ${roundNo()}/12` : rr ? `${match.game==="golf"?"Hole":match.game==="baseball"?"Inning":"Round"} ${roundNo()}/${rr.length}` : match.game==="atc" ? `Turn ${roundNo()}` : kil ? `${match.leg.p.filter(q=>!q.out).length} of ${n} left` : `${o.sets>1?`Set ${match.setNo} · `:""}Leg ${match.legNo}`;
   let s = "";
   if(n===2 && !kil) s = o.sets>1 ? `${match.players[0].sets}-${match.players[1].sets} · ${match.players[0].legs}-${match.players[1].legs}` : `${match.players[0].legs} - ${match.players[1].legs}`;
   return `<div class="bar"><button type="button" class="ib" data-act="quit" aria-label="Menu">✕</button>
@@ -2320,6 +2460,11 @@ function callText(e, mode){
   }
   if(e.k==="cr"){ const m = e.marks||0; if(big) return m>=6 ? `${m} marks!` : null; return m ? `${m} mark${m>1?"s":""}` : "No marks"; }
   if(e.k==="hv") return e.halved ? "Halved!" : big ? null : String(e.score);
+  if(e.k==="co"){
+    if(e.co) return e.banker ? `Banker! ${e.target}` : match.game==="catch40" ? `${e.target}, ${e.pts} point${e.pts===1?"":"s"}` : `${e.target}, checked out`;
+    if(e.bust) return big ? null : "Bust";
+    return big ? null : (e.v===0 ? "No score" : `${e.v}, ${e.left} left`);
+  }
   if(e.k==="rg"){
     if(e.tag==="SHANGHAI") return "Shanghai!";
     if(typeof e.score==="number") return big ? (e.score>=100 ? String(e.score) : null) : String(e.score);
@@ -2493,6 +2638,11 @@ function renderOverlay(){
     <button type="button" class="primary" data-act="toSetup">Leave match (resume later)</button>
     ${!online && !(match.over && match.over.type==="match") ? `<button type="button" class="secondary" data-act="abandon">End match without finishing</button>` : ""}
     <button type="button" class="secondary" data-act="closeDlg">Keep playing</button></div></div></div>`;
+  if(coAsk) return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="coh">
+    <h2 id="coh">Checked out ${match.leg.p[match.cur].left}! Darts used this visit?</h2>
+    <div class="hint">${match.game==="catch40" ? "Total darts decide the points: 2 = 3 pts, 3 = 2 pts, 4–6 = 1 pt." : "Finish in 3 darts or fewer to make it a banker."}</div>
+    <div class="dchoice">${[1,2,3].map(d=>`<button type="button" data-cofin="${d}" ${coAsk.opts.includes(d)?"":"disabled"}>${d}</button>`).join("")}</div>
+    <button type="button" class="secondary" data-act="cancelCo">Cancel</button></div></div>`;
   if(pending) return `<div class="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ph">
     <h2 id="ph">Game shot! Darts used to check out ${pending.score}?</h2>
     <div class="dchoice">${[1,2,3].map(d=>`<button type="button" data-fin="${d}" ${pending.opts.includes(d)?"":"disabled"}>${d}</button>`).join("")}</div>
@@ -2526,11 +2676,16 @@ function renderOverlay(){
     line = `Final score ${best}`;
   }
   else if(o.type==="match" && match.game==="killer"){ title = `${w} wins Killer`; line = "Last one standing"; }
+  else if(o.type==="match" && isCO(match.game)){
+    const P = match.leg.p[o.winner];
+    title = o.tie ? `Tie: ${o.tie.map(i=>esc(match.players[i].name)).join(" & ")}` : match.players.length===1 ? `${shortName(match.game)} complete` : `${w} wins ${esc(shortName(match.game))}`;
+    line = match.game==="c121" ? `Highest checkout ${P.best || "–"} · ${P.fin} of ${coAttempts(match)} finished${P.banker ? ` · banker ${P.banker}` : ""}` : `${P.pts} of 120 points · ${P.fin} of 40 finished`;
+  }
   else if(o.type==="match"){ title = `${w} wins the match`; line = match.opts.sets>1 ? `Sets ${setScore}` : `Legs ${legScore}`; }
   else if(o.type==="set"){ title = `${w} wins set ${match.setNo}`; line = `Legs ${legScore} · Sets ${setScore}`; }
   else { title = `${w} wins leg ${match.legNo}`; line = `Legs ${legScore}${match.opts.sets>1?` in set ${match.setNo}`:""}`; }
-  const extra = o.checkout ? `Checked out ${o.checkout} · ${o.darts}-dart leg` : match.game==="killer" ? `${o.darts} darts thrown` : match.game==="halveit" ? "After 12 rounds" : isRG(match.game) ? `${match.leg.p[o.winner].darts} darts thrown` : `Won in ${o.darts} darts`;
-  const statLabel = is01(match.game) ? "3-dart avg" : match.game==="killer" ? "Lives taken" : match.game==="golf" ? "Strokes" : match.game==="atc" ? "Progress" : match.game==="baseball" ? "Runs" : oneGame(match.game) ? "Score" : "MPR";
+  const extra = isCO(match.game) && o.type==="match" ? `${match.leg.p[o.winner].darts} darts thrown` : o.checkout ? `Checked out ${o.checkout} · ${o.darts}-dart leg` : match.game==="killer" ? `${o.darts} darts thrown` : match.game==="halveit" ? "After 12 rounds" : isRG(match.game) ? `${match.leg.p[o.winner].darts} darts thrown` : `Won in ${o.darts} darts`;
+  const statLabel = match.game==="c121" ? "Highest" : match.game==="catch40" ? "Points" : is01(match.game) ? "3-dart avg" : match.game==="killer" ? "Lives taken" : match.game==="golf" ? "Strokes" : match.game==="atc" ? "Progress" : match.game==="baseball" ? "Runs" : oneGame(match.game) ? "Score" : "MPR";
   const kil = oneGame(match.game);
   const stats = o.type==="match" ? `<table class="stats"><thead><tr><th>Player</th>${match.opts.sets>1?"<th>Sets</th>":""}${kil?"":"<th>Legs</th>"}<th>${statLabel}</th></tr></thead><tbody>
     ${match.players.map((pl,i)=>`<tr><td>${esc(pl.name)}</td>${match.opts.sets>1?`<td>${pl.sets}</td>`:""}${kil?"":`<td>${pl.legsTotal}</td>`}<td>${avgText(i)}</td></tr>`).join("")}</tbody></table>` : "";
@@ -2619,6 +2774,12 @@ function bigTarget(){
       sub = pos+1 < ATC_T.length ? `Then ${bl(ATC_T[pos+1])}` : "Last one!"; }
     else if(g==="bobs"){ const v = t===25 ? 50 : 2*t; label = `Round ${roundNo()} of ${r.length}`; val = t===25 ? "D-BULL" : "D"+t; sub = `Hits add ${v} · full miss loses ${v}`; }
     else if(g==="countup"){ label = `Round ${roundNo()} of ${r.length}`; val = "ANY"; sub = "Score as much as you can"; }
+  } else if(isCO(g)){
+    const P = match.leg.p[match.cur], md = coMaxDarts(g);
+    if(g==="c121"){ label = `Attempt ${P.att+1} of ${coAttempts(match)} · target ${P.target}`; val = String(P.left);
+      sub = `${md - P.used} darts left${P.banker ? ` · 🔒 never below ${P.banker}` : ""} · finish in 3 = banker`; }
+    else { label = `Target ${P.att+1} of 40 · ${P.target}`; val = String(P.left);
+      sub = `${md - P.used} darts left · 2 darts 3 pts · 3 darts 2 · 4–6 darts 1`; }
   } else return "";
   return `<div class="bigtarget" aria-live="polite"><div class="bt-label"><b>${name}</b> · ${esc(label)}</div><div class="bt-val">${esc(val)}</div>${sub ? `<div class="bt-sub">${esc(sub)}</div>` : ""}</div>`;
 }
@@ -2789,11 +2950,11 @@ function renderRGDock(){
     </div></div>`;
 }
 function renderGame(){
-  const x01 = is01(match.game), kil = match.game==="killer", hv = match.game==="halveit", rg = isRG(match.game);
+  const x01 = is01(match.game), kil = match.game==="killer", hv = match.game==="halveit", rg = isRG(match.game), cog = isCO(match.game);
   app.innerHTML = `<div class="game">${kil ? `<div class="roundline"><span>${L_round()}</span><span class="mode">${modeText()}</span></div>` : renderHeader()}
-    <div class="board ${isCricket(match.game) ? "fit" : ""}" id="board">${x01 ? render01Board() : kil ? renderKillerBoard() : hv ? renderHalveBoard() : rg ? renderRGBoard() : renderCricketBoard()}</div>
-    ${renderBar()}${x01 ? render01Dock() : kil ? renderKillerDock() : hv ? renderHalveDock() : rg ? renderRGDock() : renderCricketDock()}</div>${renderOverlay()}`;
-  if(hv || rg){ const c = document.getElementById("hcur"), b = document.getElementById("board"); if(c && b){ const bt = b.querySelector(".bigtarget"), off = bt ? bt.offsetHeight : 0; b.scrollTop = c.offsetTop - off - (b.clientHeight-off)/2 + c.offsetHeight/2; } }
+    <div class="board ${isCricket(match.game) ? "fit" : ""}" id="board">${cog ? renderCOBoard() : x01 ? render01Board() : kil ? renderKillerBoard() : hv ? renderHalveBoard() : rg ? renderRGBoard() : renderCricketBoard()}</div>
+    ${renderBar()}${cog ? renderCODock() : x01 ? render01Dock() : kil ? renderKillerDock() : hv ? renderHalveDock() : rg ? renderRGDock() : renderCricketDock()}</div>${renderOverlay()}`;
+  if(hv || rg || cog){ const c = document.getElementById("hcur"), b = document.getElementById("board"); if(c && b){ const bt = b.querySelector(".bigtarget"), off = bt ? bt.offsetHeight : 0; b.scrollTop = c.offsetTop - off - (b.clientHeight-off)/2 + c.offsetHeight/2; } }
   if(x01){ const b = document.getElementById("board"); b.scrollTop = b.scrollHeight; }
 }
 /* scale the game screen to fill tablets and unfolded phones */
@@ -2888,7 +3049,7 @@ app.addEventListener("click", e=>{
   }
   if(d.set==="game"){ settings.game = d.val; save(); setupStep = hasOptionsStep(d.val) ? 2 : 3; window.scrollTo(0,0); render(); return; }
   if(d.set==="teams"){ settings.teams = d.val; settings.teamOf = []; if(!["bull","random"].includes(settings.firstThrow)) settings.firstThrow = "0"; save(); render(); return; }
-  if(d.set){ settings[d.set] = d.set==="points" ? d.val==="true" : ["lives","shRounds","cuRounds"].includes(d.set) ? +d.val : d.val; save(); render(); return; }
+  if(d.set){ settings[d.set] = d.set==="points" ? d.val==="true" : ["lives","shRounds","cuRounds","coAttempts"].includes(d.set) ? +d.val : d.val; save(); render(); return; }
   if(d.cat){ const c = CATS.find(x=>x[0]===d.cat); if(catOf(settings.game)!==d.cat) settings.game = c[2][0]; save(); render(); return; }
   if(d.rg!==undefined){ rgDart(+d.rg, +d.m); return; }
   if(d.bobs!==undefined){ bobsHits(+d.bobs); return; }
@@ -2908,6 +3069,7 @@ app.addEventListener("click", e=>{
     if(ft!=="bull" && ft!=="random"){ if(+ft===rm) settings.firstThrow = "0"; else if(+ft>rm) settings.firstThrow = String(+ft-1); }
     save(); render(); return;
   }
+  if(d.cofin!==undefined){ coFinish(+d.cofin); return; }
   if(d.digit!==undefined){ calcKey(d.digit); render(); return; }
   if(d.op!==undefined){ calcKey(d.op); render(); return; }
   if(d.score!==undefined){ submitScore(+d.score); return; }
@@ -2959,6 +3121,7 @@ app.addEventListener("click", e=>{
     case "rand": randomPick(); break;
     case "reuse": reuseNumbers(); break;
     case "cancelFin": pending = null; render(); break;
+    case "cancelCo": coAsk = null; render(); break;
     case "nextLeg": nextLeg(); break;
     case "corkWin": corkWinner(+d.i); break;
     case "corkGame": corkGame(d.g); break;
@@ -3020,7 +3183,7 @@ document.addEventListener("keydown", e=>{
   if(screen!=="game" || !match || dialog || e.target.tagName==="INPUT") return;
   if((e.ctrlKey||e.metaKey) && e.key==="z"){ e.preventDefault(); if(!online || match.by===deviceId) undo(); return; }
   if(online && !isMyTurn()) return;
-  const totalEntry = is01(match.game) || match.game==="countup" || (match.game==="halveit" && ["EVEN","ODD"].includes(halveTarget()));
+  const totalEntry = is01(match.game) || isCO(match.game) || match.game==="countup" || (match.game==="halveit" && ["EVEN","ODD"].includes(halveTarget()));
   if(!totalEntry || match.over || pending) return;
   if(/^[0-9]$/.test(e.key)){ calcKey(e.key); render(); }
   else if(e.key==="+"){ calcKey("+"); render(); }
