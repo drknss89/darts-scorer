@@ -709,6 +709,11 @@ function memberStats(m, side, w, team){
     st.raw = Object.assign({}, st.raw);
     return st;
   }
+  if(isCO(m.game)){
+    const c = own.filter(e=>e.p===side && e.w===w && e.k==="co"), fin = c.filter(e=>e.co);
+    const darts = c.reduce((a,e)=>a+(e.co ? e.darts : 3),0);
+    return { rows: [[m.game==="c121" ? "Team highest" : "Team points", team.rows[0][1]], ["Checkouts hit", fin.length], ["Highest checkout hit", Math.max(0,...fin.map(e=>e.target)) || "–"], ["Visits", c.length], ["Darts thrown", darts]], raw: { game:m.game, won:false } };
+  }
   const t = own.filter(e=>e.p===side && e.w===w && ["hv","rg"].includes(e.k));
   const pts = t.reduce((a,e)=>a+(typeof e.score==="number" ? e.score : 0),0);
   return { rows: [["Team result", team.rows[0][1]], ["Points scored", pts], ["Turns", t.length], ["Darts thrown", t.length*3]], raw: { game:m.game, won:false } };
@@ -1400,7 +1405,7 @@ function newLeg(){
   return { p, log:[], phase: g==="killer" ? "pick" : "play", round:0 };
 }
 function tl(e){ if(!match.tlog) match.tlog = []; e.s = match.setNo; e.l = match.legNo;
-  if(match.teams && ["01","cr","hv","rg","ki"].includes(e.k)){ const w = upIdx(e.p); if(w!==null) e.w = w; }
+  if(match.teams && ["01","cr","hv","rg","ki","co"].includes(e.k)){ const w = upIdx(e.p); if(w!==null) e.w = w; }
   match.tlog.push(e); return match.tlog.length-1; }
 /* ---------- teams: each side is one "player"; partners take turns (A1, B1, A2, B2) ---------- */
 const teamable = g => !["killer","bobs","c121","catch40"].includes(g);
@@ -1420,6 +1425,12 @@ function startMatch(keep){
   const nm = i => settings.players[i].trim() || `Player ${i+1}`, pd = i => (settings.pids || [])[i] || null;
   let sides;
   if(keep) sides = keep;
+  else if(settings.game==="c121" && settings.players.length>1){
+    const all = settings.players.map((_,i)=>({ name:nm(i), pid:pd(i) })), ft = String(settings.firstThrow||"0");
+    const k = ft==="random" ? Math.floor(Math.random()*all.length) : (+ft < all.length ? +ft : 0);
+    const order = all.slice(k).concat(all.slice(0,k));
+    sides = [{ name: order.map(m=>m.name).join(" & "), pid:null, members: order }];
+  }
   else if(teamsOn()) sides = teamGroups().filter(g=>g.length).map(g=>({ name:g.map(nm).join(" & "), pid:null, members:g.map(i=>({ name:nm(i), pid:pd(i) })) }));
   else sides = settings.players.map((_,i)=>({ name:nm(i), pid:pd(i) }));
   const names = sides.map(x=>x.name), pids = sides.map(x=>x.pid||null);
@@ -1943,7 +1954,8 @@ function rulesFor(g, o){
     "Finish it and you move up one (122, 123…). Miss and you drop back one.",
     "Banker: check out in 3 darts or fewer and that number is locked in. You can never drop below it.",
     "Bust (going below 0 or leaving 1) scores nothing for that visit and uses its 3 darts.",
-    "Keep climbing until you check out 170 or tap End game. Your score is the highest number you checked out."
+    "Keep climbing until you check out 170 or tap End game. Your score is the highest number you checked out.",
+    "Solo or as a team: with more than one player, everyone shares one ladder and takes turns, one visit each."
   ];
   if(g==="catch40") return [
     "Check out every number from 61 to 100 in order: 40 checkouts, each finishing on a double.",
@@ -2136,9 +2148,10 @@ function renderSetup(){
       ${teamable(s.game) && s.players.length>=3 ? `<div class="label">Teams</div>
       <div class="seg small">${segBtns("teams", [["0","No teams"],["2","2 teams"]].concat(s.players.length>=6 ? [["3","3 teams"]] : []).concat(s.players.length>=8 ? [["4","4 teams"]] : []), teamsOn() ? String(s.teams) : "0")}</div>` : ""}
       ${teamsOn() ? `<div class="teamlist">${teamGroups().map((g,k)=>`<div><b>Team ${TEAM_L[k]}</b>${g.length ? esc(g.map(i=>s.players[i].trim()||`Player ${i+1}`).join(" & ")) : `<span class="muted">nobody yet: tap ${TEAM_L[k]} next to a player</span>`}</div>`).join("")}</div>` : ""}
+      ${s.game==="c121" && s.players.length>1 ? `<div class="teamlist"><div><b>One team</b>${esc(s.players.map((n,i)=>n.trim()||`Player ${i+1}`).join(" & "))}</div></div>` : ""}
       ${s.players.length>1 ? `<div class="label">Throws first</div>
-      <div class="seg small first">${segBtns("firstThrow", (teamsOn() ? teamGroups().map((g,k)=>[String(k), `Team ${TEAM_L[k]}`]) : s.players.map((n,i)=>[String(i), esc(n.trim() || `Player ${i+1}`)])).concat([["bull","Bull-off"],["random","Random"]]), String(s.firstThrow||"0"))}</div>` : ""}
-      <div class="hint">${teamsOn() ? "Partners take turns: A1, B1, A2, B2… Each team shares one score; everyone also gets their own stats." : "Turns go in list order, starting from whoever throws first."}${oneGame(s.game) ? "" : teamsOn() ? " The first team and first partner rotate each leg." : " The first thrower then rotates each leg."}</div>
+      <div class="seg small first">${segBtns("firstThrow", (teamsOn() ? teamGroups().map((g,k)=>[String(k), `Team ${TEAM_L[k]}`]) : s.players.map((n,i)=>[String(i), esc(n.trim() || `Player ${i+1}`)])).concat(s.game==="c121" ? [["random","Random"]] : [["bull","Bull-off"],["random","Random"]]), String(s.firstThrow||"0"))}</div>` : ""}
+      <div class="hint">${s.game==="c121" ? (s.players.length>1 ? "121 Ladder is a team game: everyone shares one ladder and takes turns, one visit each, starting with whoever throws first." : "121 Ladder is a solo or team game. Add players to climb the ladder together.") : teamsOn() ? "Partners take turns: A1, B1, A2, B2… Each team shares one score; everyone also gets their own stats." : "Turns go in list order, starting from whoever throws first."}${oneGame(s.game) ? "" : teamsOn() ? " The first team and first partner rotate each leg." : " The first thrower then rotates each leg."}</div>
     </div>
     ${s.game==="killer" && s.players.length<2 ? `<div class="hint">Killer needs at least 2 players.</div>` : ""}
     ${teamsOn() && teamGroups().some(g=>!g.length) ? `<div class="hint">Every team needs at least one player.</div>` : ""}
@@ -3127,7 +3140,7 @@ app.addEventListener("click", e=>{
     case "reuse": reuseNumbers(); break;
     case "cancelFin": pending = null; render(); break;
     case "cancelCo": coAsk = null; render(); break;
-    case "coEnd": askConfirm(`End the game now? ${match.players.length>1 ? "Whoever has the highest checkout wins." : "Your highest checkout is your score."} It counts as a finished game.`, "End game", ()=>{ snapshot(); coNext(true); save(); render(); }); break;
+    case "coEnd": askConfirm(`End the game now? ${match.teams ? "Your team's" : "Your"} highest checkout is the score. It counts as a finished game.`, "End game", ()=>{ snapshot(); coNext(true); save(); render(); }); break;
     case "nextLeg": nextLeg(); break;
     case "corkWin": corkWinner(+d.i); break;
     case "corkGame": corkGame(d.g); break;
