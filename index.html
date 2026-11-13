@@ -1937,7 +1937,8 @@ function camInfo(){
 function camChip(){
   if(!cam) return "";
   const ds = camVisit && camVisit.darts ? Object.values(camVisit.darts) : [];
-  return ` <span class="camchip">📷 ${ds.length ? ds.map(d=>dartLabel(+d.n, +d.m)).join(" ") : "ready"}</span>`;
+  const tn = camVisit && camVisit.turn ? `#${camVisit.turn} ` : "";
+  return ` <span class="camchip">📷 ${tn}${ds.length ? ds.map(d=>dartLabel(+d.n, +d.m)).join(" ") : "ready"}</span>`;
 }
 function camSettingsHtml(){
   const url = location.href.split("#")[0].split("?")[0].replace(/[^/]*$/, "") + "camera.html";

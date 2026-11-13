@@ -71,6 +71,12 @@ which simply loads this site, so pushing to `main` updates the Android app too.
   and each finished visit to `cam/turns` (push); tablet applies with `camApply(darts)` (handles every game type) and deletes it.
   Tablet writes who's up to `cam/info` (`camInfo`). Chip in the game bar: `camChip`. Saved link: localStorage `dartsScorer.cam`.
 - Both devices must be logged in to the same Firebase project (same origin shares the login).
+- Test log for debugging (Ryan sends it to Claude): every dart gets an ID `turn.dart` (e.g. `#14.2`, shown on the phone slots,
+  overlay and the tablet chip as `#14`). With "Save pictures of every dart" on, each dart's before/after frames (JPEG, processing
+  size W×H) + tip/flight-end/fix points are stored in IndexedDB `dartsCamera`/`log`. Fixing, moving, tapping in or removing a dart
+  flags it automatically; "⚑ Report a problem with turn N" saves a turn report. Export = one self-contained HTML viewer; the raw data
+  is the JSON in `<script id="data">` ({meta:{W,H,pts,thr,camPos}, entries:[{id,said,fixed,reason,note,tip,end,fix,before,after,...}]}),
+  so detection can be re-run offline on the exact frames with the CORE functions.
 - `sw.js` caches camera.html under its own key (navigations used to overwrite the cached index.html).
 
 ## Planned next: Autodarts auto-scoring (steel-tip)

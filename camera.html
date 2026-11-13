@@ -214,11 +214,12 @@ let visit = newVisit(), editIdx = -1, paused = false;
 let fb = null, user = null, wake = null, info = null;
 
 function load(){
-  const d = { pts:null, thr:70, camPos:"below", autoNext:true, debug:false, link:null };
+  const d = { pts:null, thr:70, camPos:"below", autoNext:true, debug:false, link:null, evidence:true, turnNo:1 };
   try{ return Object.assign(d, JSON.parse(localStorage.getItem(STORE) || "{}")); }catch(e){ return d; }
 }
 function saveCfg(){ try{ localStorage.setItem(STORE, JSON.stringify(cfg)); }catch(e){} }
-function newVisit(){ return { seq: Date.now(), darts: [] }; }
+function newVisit(){ return { seq: Date.now(), turn: (cfg && cfg.turnNo) || 1, k: 0, darts: [] }; }
+function addDart(d){ d.id = `${visit.turn}.${++visit.k}`; visit.darts.push(d); return d; }
 function toast(t){ const el = document.createElement("div"); el.className = "toast"; el.textContent = t; document.body.appendChild(el); setTimeout(()=>el.remove(), 2200); }
 function vibrate(ms){ try{ navigator.vibrate && navigator.vibrate(ms); }catch(e){} }
 
@@ -305,11 +306,15 @@ function settled(t, minDart, big){
   const blob = largestBlob(dclean, W, H);
   if(blob.length < minDart){ return; }
   lastBlob = blob;
-  if(visit.darts.length >= 3){ ref = cur; banner("4th dart ignored. Pull the darts or tap Next.", 2000); return; }
+  if(visit.darts.length >= 3){
+    logEvent(`${visit.turn}.x${++visit.k}`, "extra dart ignored", { before:ref, after:cur });
+    ref = cur; banner("4th dart ignored. Pull the darts or tap Next.", 2000); return;
+  }
   const tip = findTip(blob, W, toBoard, DIRS[cfg.camPos]);
   const b = toBoard(tip.x, tip.y), s = scoreAt(b[0], b[1]);
   const sample = []; const step = Math.max(1, Math.floor(blob.length / 400)); for(let k=0;k<blob.length;k+=step) sample.push(blob[k]);
-  visit.darts.push({ n:s.n, m:s.m, bx:b[0], by:b[1], auto:true, pix:sample });
+  const dt = addDart({ n:s.n, m:s.m, bx:b[0], by:b[1], auto:true, pix:sample });
+  logDart(dt, "camera", { before:ref, after:cur, tip:{ x:tip.x, y:tip.y }, end: tip.other ? { x:tip.other.x, y:tip.other.y } : null, how:tip.how, blob:blob.length });
   ref = cur; vibrate(40); sendVisit(); renderVisit();
 }
 // are the darts of this visit gone? compare their pixels with the empty-board frame
@@ -327,8 +332,9 @@ function takeout(){
 }
 function nextTurn(auto){
   editIdx = -1;
-  const done = { seq: visit.seq, darts: visit.darts.map(d => ({ n:d.n, m:d.m })) };
+  const done = { seq: visit.seq, turn: visit.turn, darts: visit.darts.map(d => ({ n:d.n, m:d.m })) };
   sendDone(done);
+  cfg.turnNo = visit.turn + 1; saveCfg();
   banner(`${done.darts.map(label).join("  ") || "No darts"} = ${done.darts.reduce((a,d)=>a+value(d),0)}${auto ? " · darts pulled" : ""}`, 1800);
   visit = newVisit(); if(cur) { ref = cur; visitStart = cur; }
   sendVisit(); renderVisit();
@@ -366,8 +372,8 @@ function draw(){
       const p = toImage(d.bx, d.by);
       vctx.strokeStyle = i === editIdx ? "#f3e3b5" : "#2bff88"; vctx.lineWidth = lw * 1.5;
       vctx.beginPath(); vctx.arc(p[0], p[1], lw * 5, 0, 7); vctx.stroke();
-      vctx.fillStyle = "#000c"; vctx.fillRect(p[0] + lw*6, p[1] - lw*9, lw*22, lw*12);
-      vctx.fillStyle = "#fff"; vctx.font = `bold ${Math.round(lw*9)}px system-ui`; vctx.textAlign = "left"; vctx.fillText(label(d), p[0] + lw*7, p[1]);
+      vctx.fillStyle = "#000c"; vctx.fillRect(p[0] + lw*6, p[1] - lw*9, lw*34, lw*12);
+      vctx.fillStyle = "#fff"; vctx.font = `bold ${Math.round(lw*9)}px system-ui`; vctx.textAlign = "left"; vctx.fillText(`${d.id} ${label(d)}`, p[0] + lw*7, p[1]);
     });
   }
 }
@@ -398,8 +404,15 @@ view.addEventListener("pointerup", e => {
   }
   if(mode === "play" && Hi2b){
     const b = toBoard(p.x, p.y), s = scoreAt(b[0], b[1]);
-    if(editIdx >= 0 && visit.darts[editIdx]){ Object.assign(visit.darts[editIdx], s, { bx:b[0], by:b[1], auto:false }); editIdx = -1; }
-    else if(visit.darts.length < 3) visit.darts.push({ n:s.n, m:s.m, bx:b[0], by:b[1], auto:false });
+    if(editIdx >= 0 && visit.darts[editIdx]){
+      const dt = visit.darts[editIdx], was = label(dt);
+      Object.assign(dt, s, { bx:b[0], by:b[1], auto:false }); editIdx = -1;
+      fixLog(dt, was, "moved to where it really is", { x:p.x, y:p.y });
+    }
+    else if(visit.darts.length < 3){
+      const dt = addDart({ n:s.n, m:s.m, bx:b[0], by:b[1], auto:false });
+      logDart(dt, "tapped in", { before:ref, after:grab(), fix:{ x:p.x, y:p.y }, flagged:!paused, reason: paused ? "" : "camera didn't see this dart" });
+    }
     else { toast("3 darts already. Tap one to change it."); return; }
     vibrate(20); sendVisit(); renderVisit();
   }
@@ -426,7 +439,7 @@ function renderVisit(){
     const d = ds[i];
     if(!d) return `<button class="slot" data-slot="${i}" disabled> </button>`;
     const cls = d.n === 0 ? "miss" : d.m === 3 ? "t" : d.m === 2 ? "d" : "";
-    return `<button class="slot ${cls} ${editIdx === i ? "edit" : ""}" data-slot="${i}">${label(d)}<small>${d.auto ? "camera" : "you"}</small></button>`;
+    return `<button class="slot ${cls} ${editIdx === i ? "edit" : ""}" data-slot="${i}">${label(d)}<small>#${d.id} · ${d.auto ? "camera" : "you"}${d.log && d.log.flagged ? " ⚑" : ""}</small></button>`;
   }).join("") + `<div class="total">${ds.reduce((a,d)=>a+value(d),0)}</div>`;
   renderControls();
 }
@@ -439,14 +452,16 @@ function renderControls(){
       <div class="mods">${[1,2,3].map(m => `<button data-mod="${m}" class="${pickMod===m?"on":""}">${["Single","Double","Triple"][m-1]}</button>`).join("")}</div>
       <div class="grid">${[...Array(20)].map((_, k) => `<button data-pick="${k+1}">${k+1}</button>`).join("")}
         <button data-pick="25" data-m="1">25</button><button data-pick="25" data-m="2">Bull</button><button data-pick="0">Miss</button>
-        <button data-act="delDart">Remove</button><button data-act="cancelEdit">Done</button></div></div>`;
+        <button data-act="delDart">Remove</button><button data-act="cancelEdit">Done</button></div>
+      <div class="row" style="margin:8px 0 0"><button data-act="flagDart">⚑ Score is right but flag it for Claude</button></div></div>`;
     return;
   }
   c.innerHTML = `<div class="row">
       <button data-act="miss" ${visit.darts.length >= 3 ? "disabled" : ""}>+ Miss</button>
       <button data-act="undoDart" ${visit.darts.length ? "" : "disabled"}>Undo</button>
       <button class="go" data-act="next">Next ▶</button></div>
-    <div class="row"><button data-act="pause">${paused ? "▶ Resume" : "⏸ Pause"}</button><button data-act="recal">Calibrate</button><button data-act="rebase">Reset view</button></div>`;
+    <div class="row"><button data-act="pause">${paused ? "▶ Resume" : "⏸ Pause"}</button><button data-act="recal">Calibrate</button><button data-act="rebase">Reset view</button></div>
+    <div class="row"><button data-act="flagTurn">⚑ Report a problem with turn ${visit.turn}</button></div>`;
 }
 let pickMod = 1;
 function render(){
@@ -458,7 +473,7 @@ function render(){
       <div class="hint">1. Put this phone on a stand 1 to 2 metres from the board, off to one side or below it, so it looks at the board at an angle (not straight on: darts hide their own tips).<br>
       2. Good, even lighting on the board helps a lot. Plug the phone in.<br>
       3. Calibrate once by tapping 4 doubles. Don't move the phone afterwards.</div>
-      <button class="primary" data-act="start" style="width:100%;margin-top:8px">Start camera</button></div>` + settingsHtml();
+      <button class="primary" data-act="start" style="width:100%;margin-top:8px">Start camera</button></div>` + settingsHtml(); logCounts();
     return;
   }
   if(mode === "calib"){
@@ -470,7 +485,7 @@ function render(){
     return;
   }
   banner(paused ? "Paused" : "", 0);
-  p.innerHTML = settingsHtml();
+  p.innerHTML = settingsHtml(); logCounts();
   updateUp();
 }
 function settingsHtml(){
@@ -488,6 +503,13 @@ function settingsHtml(){
         <input type="range" min="30" max="140" step="5" value="${cfg.thr}" data-set="thr" style="width:40%"></label>
       <label class="line"><span>Next player when darts are pulled<small>Off: tap Next yourself</small></span><input type="checkbox" data-set="autoNext" ${cfg.autoNext?"checked":""}></label>
       <label class="line"><span>Show what the camera sees as a change<small>Red = changed pixels of the last dart</small></span><input type="checkbox" data-set="debug" ${cfg.debug?"checked":""}></label>
+    </div>
+    <div class="panel"><h2>Test log for Claude</h2>
+      <label class="line"><span>Save pictures of every dart<small>Kept on this phone only. Darts you fix, move, add or remove are flagged automatically.</small></span><input type="checkbox" data-set="evidence" ${cfg.evidence?"checked":""}></label>
+      <div class="hint" id="logcount">…</div>
+      <div class="row"><button class="primary" data-act="logFlagged">Send flagged darts</button><button data-act="logAll">Send everything</button></div>
+      <div class="row"><button data-act="logClear">Clear log</button></div>
+      <div class="hint">Sends one file. Attach it in your chat with Claude and name the darts, for example “#14.2 should be T19”.</div>
     </div>`;
 }
 function esc(s){ return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" })[c]); }
@@ -504,8 +526,9 @@ document.addEventListener("click", e => {
   if(d.mod){ pickMod = +d.mod; renderControls(); return; }
   if(d.pick !== undefined){
     const n = +d.pick, m = n === 0 ? 0 : n === 25 ? +d.m : pickMod;
-    Object.assign(visit.darts[editIdx], { n, m, auto:false }); delete visit.darts[editIdx].bx;
-    editIdx = -1; sendVisit(); renderVisit(); return;
+    const dt = visit.darts[editIdx], was = label(dt);
+    Object.assign(dt, { n, m, auto:false }); delete dt.bx;
+    editIdx = -1; fixLog(dt, was, "score picked by hand"); sendVisit(); renderVisit(); return;
   }
   switch(d.act){
     case "start": startCamera(); break;
@@ -513,14 +536,21 @@ document.addEventListener("click", e => {
     case "calReset": cfg.pts = []; Hb2i = Hi2b = null; render(); break;
     case "calDone": applyCalib(); if(Hi2b){ mode = "play"; banner("Ready. Throw!", 1500); } render(); break;
     case "recal": mode = "calib"; render(); break;
-    case "miss": visit.darts.push({ n:0, m:0, auto:false }); sendVisit(); renderVisit(); break;
-    case "undoDart": visit.darts.pop(); editIdx = -1; if(cur) ref = cur; sendVisit(); renderVisit(); break;
+    case "miss": { const dt = addDart({ n:0, m:0, auto:false }); logDart(dt, "miss button", { before:ref, after:grab() }); sendVisit(); renderVisit(); break; }
+    case "undoDart": { const dt = visit.darts.pop(); if(dt && dt.auto) fixLog(dt, label(dt), "undone (not a real dart?)", null, true); } editIdx = -1; if(cur) ref = cur; sendVisit(); renderVisit(); break;
     case "next": nextTurn(false); break;
     case "pause": paused = !paused; if(!paused && cur){ ref = null; } render(); break;
     case "rebase": ref = null; lastBlob = null; banner("View reset", 1200); break;
-    case "delDart": visit.darts.splice(editIdx, 1); editIdx = -1; sendVisit(); renderVisit(); break;
+    case "delDart": { const dt = visit.darts[editIdx]; if(dt) fixLog(dt, label(dt), "removed (not a real dart?)", null, true); } visit.darts.splice(editIdx, 1); editIdx = -1; sendVisit(); renderVisit(); break;
     case "cancelEdit": editIdx = -1; renderVisit(); break;
     case "link": linkTo(($("#code").value || "").trim().toUpperCase()); break;
+    case "flagDart": { const dt = visit.darts[editIdx]; if(!dt) break; const note = prompt(`What's wrong with dart #${dt.id}? (optional)`); if(note === null) break;
+      fixLog(dt, label(dt), "flagged by you", null, false, note); editIdx = -1; renderVisit(); toast(`Dart #${dt.id} saved for Claude`); break; }
+    case "flagTurn": { const note = prompt(`What went wrong in turn ${visit.turn}? (optional)`); if(note === null) break;
+      logEvent(`${visit.turn}.T`, "turn report", { before:visitStart, after:grab(), flagged:true, note, said: visit.darts.map(label).join(" ") }); toast(`Turn ${visit.turn} saved for Claude`); break; }
+    case "logFlagged": exportLog(true); break;
+    case "logAll": exportLog(false); break;
+    case "logClear": if(confirm("Delete every saved dart and picture from this phone?")) dbClear().then(() => { toast("Test log cleared"); render(); }); break;
     case "unlink": stopInfo(); cfg.link = null; saveCfg(); render(); break;
   }
 });
@@ -529,6 +559,115 @@ document.addEventListener("change", e => {
   cfg[s] = e.target.type === "checkbox" ? e.target.checked : e.target.type === "range" ? +e.target.value : e.target.value;
   saveCfg(); if(s === "debug") lastBlob = cfg.debug ? lastBlob : null;
 });
+
+/* ---------- test log: pictures + details of each dart, kept in IndexedDB, exported as one file ---------- */
+const jc = document.createElement("canvas");
+function jpeg(px){
+  if(!px || px.length !== W*H*4) return null;
+  jc.width = W; jc.height = H; jc.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(px), W, H), 0, 0);
+  return jc.toDataURL("image/jpeg", 0.82);
+}
+let dbp = null;
+function db(){
+  return dbp || (dbp = new Promise((res, rej) => {
+    const r = indexedDB.open("dartsCamera", 1);
+    r.onupgradeneeded = () => { const st = r.result.createObjectStore("log", { keyPath:"key" }); st.createIndex("fl", "fl"); st.createIndex("time", "time"); };
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  }));
+}
+const dbTx = (mode, fn) => db().then(d => new Promise((res, rej) => { const tx = d.transaction("log", mode), st = tx.objectStore("log"); const out = fn(st); tx.oncomplete = () => res(out && out.result); tx.onerror = () => rej(tx.error); }));
+let puts = 0;
+function dbPut(e){ e.fl = e.flagged ? 1 : 0; return dbTx("readwrite", st => st.put(e)).then(() => { if(++puts % 20 === 0) prune(); logCounts(); }).catch(() => {}); }
+const dbAll = () => dbTx("readonly", st => st.getAll());
+const dbClear = () => dbTx("readwrite", st => st.clear());
+function prune(){ // keep the newest 400 (flagged ones are kept regardless)
+  dbTx("readwrite", st => { let n = 0; st.index("time").openCursor(null, "prev").onsuccess = ev => { const c = ev.target.result; if(!c) return; if(++n > 400 && !c.value.fl) c.delete(); c.continue(); }; }).catch(() => {});
+}
+function logCounts(){
+  Promise.all([dbTx("readonly", st => st.count()), dbTx("readonly", st => st.index("fl").count(1))]).then(([all, fl]) => {
+    const el = $("#logcount"); if(el) el.textContent = `${all} saved · ${fl} flagged for Claude`;
+  }).catch(() => { const el = $("#logcount"); if(el) el.textContent = "Can't save pictures in this browser."; });
+}
+function baseEntry(id, src){
+  return { key:`${id}@${visit.seq}`, id, turn:visit.turn, time:Date.now(), src, info: info ? { name:info.name || "", line:info.line || "" } : null,
+    settings:{ thr:cfg.thr, camPos:cfg.camPos }, flagged:false, reason:"", note:"" };
+}
+function logDart(d, src, o){
+  if(!cfg.evidence){ d.log = null; return; }
+  const e = Object.assign(baseEntry(d.id, src), { said:label(d), fixed:null, board: d.bx !== undefined ? [d.bx, d.by] : null,
+    tip:o.tip || null, end:o.end || null, fix:o.fix || null, how:o.how || "", blob:o.blob || 0, flagged:!!o.flagged, reason:o.reason || "",
+    before:jpeg(o.before), after:jpeg(o.after) });
+  d.log = e; dbPut(e);
+}
+function fixLog(d, was, reason, fixPt, removed, note){
+  if(!cfg.evidence) return;
+  if(!d.log) logDart(d, d.auto ? "camera" : "you", { before:ref, after:grab() });
+  const e = d.log; if(!e) return;
+  if(e.said === undefined || e.said === null) e.said = was;
+  e.fixed = removed ? "removed" : label(d);
+  if(fixPt) e.fix = fixPt; else if(d.bx !== undefined && Hb2i){ const q = toImage(d.bx, d.by); e.fix = { x:q[0], y:q[1] }; }
+  e.flagged = true; e.reason = reason; if(note) e.note = note;
+  dbPut(e); renderVisit();
+}
+function logEvent(id, src, o){
+  if(!cfg.evidence) return;
+  dbPut(Object.assign(baseEntry(id, src), { said:o.said || "", fixed:null, flagged:!!o.flagged, reason:src, note:o.note || "", before:jpeg(o.before), after:jpeg(o.after) }));
+}
+async function exportLog(onlyFlagged){
+  let all;
+  try{ all = (await dbAll()).sort((a, b) => a.time - b.time); }catch(e){ toast("Couldn't read the test log"); return; }
+  if(onlyFlagged) all = all.filter(e => e.flagged);
+  if(!all.length){ toast(onlyFlagged ? "Nothing flagged yet" : "The test log is empty"); return; }
+  const meta = { exported:new Date().toISOString(), W, H, pts:cfg.pts, thr:cfg.thr, camPos:cfg.camPos, ua:navigator.userAgent, version:2 };
+  const t = new Date(), pad = n => String(n).padStart(2, "0");
+  const name = `darts-camera-log-${t.getFullYear()}${pad(t.getMonth()+1)}${pad(t.getDate())}-${pad(t.getHours())}${pad(t.getMinutes())}.html`;
+  const file = new File([viewerHtml(meta, all)], name, { type:"text/html" });
+  if(navigator.canShare && navigator.canShare({ files:[file] })){
+    try{ await navigator.share({ files:[file], title:"Darts camera log" }); return; }catch(e){ if(e.name === "AbortError") return; }
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  toast("Saved to Downloads");
+}
+function viewerHtml(meta, entries){
+  const json = JSON.stringify({ meta, entries }).replace(/</g, "\\u003c");
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Darts camera log</title><style>
+body{margin:0;padding:12px;background:#120d1c;color:#f4f0fa;font:15px/1.4 system-ui,sans-serif}h1{font-size:20px;margin:4px 0}
+.c{background:#1e1630;border:1px solid #3a2d55;border-radius:12px;padding:10px;margin:12px 0}.c.f{border-color:#f3e3b5}
+.id{font-size:22px;font-weight:800}.fl{color:#f3e3b5;font-weight:700}.m{color:#a99fbd;font-size:13px}
+.ims{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}.ims div{font-size:12px;color:#a99fbd}canvas{width:100%;border-radius:8px;display:block}
+.k{display:inline-block;margin-right:12px}.g{color:#2bff88}.y{color:#f3e3b5}.b{color:#6fb4ff}
+</style></head><body><h1>Darts camera log</h1><div class="m" id="sum"></div>
+<div class="m"><span class="k g">● camera's tip</span><span class="k b">● other end of the dart</span><span class="k y">○ where you said it was</span></div>
+<div id="list"></div>
+<script id="data" type="application/json">${json}<\/script>
+<script>
+const D = JSON.parse(document.getElementById("data").textContent), E = D.entries;
+document.getElementById("sum").textContent = E.length + " entries, " + E.filter(e=>e.flagged).length + " flagged. Exported " + new Date(D.meta.exported).toLocaleString() + ". Send this file to Claude and name the darts, e.g. #14.2.";
+const esc = s => String(s==null?"":s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"})[c]);
+const list = document.getElementById("list");
+E.forEach(e => {
+  const c = document.createElement("div"); c.className = "c" + (e.flagged ? " f" : "");
+  c.innerHTML = '<div class="id">#' + esc(e.id) + (e.flagged ? ' <span class="fl">⚑ ' + esc(e.reason) + '</span>' : '') + '</div>'
+    + '<div>Camera said <b>' + esc(e.said) + '</b>' + (e.fixed ? ' → you said <b class="fl">' + esc(e.fixed) + '</b>' : '') + ' · ' + esc(e.src) + '</div>'
+    + (e.note ? '<div>Note: ' + esc(e.note) + '</div>' : '')
+    + '<div class="m">' + new Date(e.time).toLocaleTimeString() + (e.info ? ' · ' + esc(e.info.name) + ' · ' + esc(e.info.line) : '') + (e.how ? ' · tip by ' + esc(e.how) : '') + (e.blob ? ' · ' + e.blob + ' px' : '') + ' · sensitivity ' + esc(e.settings && e.settings.thr) + '</div>'
+    + '<div class="ims"><div>Before<canvas></canvas></div><div>After<canvas></canvas></div></div>';
+  list.appendChild(c);
+  const cv = c.querySelectorAll("canvas");
+  [e.before, e.after].forEach((src, k) => {
+    if(!src){ cv[k].replaceWith(document.createTextNode(" (no picture)")); return; }
+    const im = new Image(); im.onload = () => {
+      const x = cv[k].getContext("2d"); cv[k].width = im.width; cv[k].height = im.height; x.drawImage(im, 0, 0);
+      if(k !== 1) return; const r = Math.max(4, im.width/100); x.lineWidth = r/2.5;
+      if(e.end){ x.fillStyle = "#6fb4ff"; x.beginPath(); x.arc(e.end.x, e.end.y, r*0.7, 0, 7); x.fill(); }
+      if(e.tip){ x.strokeStyle = "#2bff88"; x.beginPath(); x.arc(e.tip.x, e.tip.y, r, 0, 7); x.stroke(); }
+      if(e.fix){ x.strokeStyle = "#f3e3b5"; x.beginPath(); x.arc(e.fix.x, e.fix.y, r*1.6, 0, 7); x.stroke(); }
+    }; im.src = src;
+  });
+});
+<\/script></body></html>`;
+}
 
 /* ---------- link to the scoreboard (Firebase, same account as the app) ---------- */
 function loadScript(src){ return new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
@@ -556,7 +695,7 @@ function startInfo(){ stopInfo(); if(!fb || !cfg.link) return; infoRef = fb.ref(
 function stopInfo(){ if(infoRef){ infoRef.off(); infoRef = null; } info = null; }
 function sendVisit(){
   if(!fb || !user || !cfg.link) return;
-  fb.ref(`games/${cfg.link.code}/cam/visit`).set({ seq: visit.seq, darts: visit.darts.map(d => ({ n:d.n, m:d.m })), t: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+  fb.ref(`games/${cfg.link.code}/cam/visit`).set({ seq: visit.seq, turn: visit.turn, darts: visit.darts.map(d => ({ n:d.n, m:d.m })), t: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
 }
 function sendDone(done){
   if(!fb || !user || !cfg.link) return;
