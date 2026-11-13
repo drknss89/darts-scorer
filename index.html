@@ -198,6 +198,7 @@ h1 .ring{width:38px;height:38px;flex:none;background:url(data:image/png;base64,i
 .dock{position:relative}
 .dock.locked > :not(.lockmsg){opacity:.25;pointer-events:none}
 .lockmsg{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:26px;color:#fff;text-align:center;padding:12px}
+.camchip{font-size:13px;font-weight:700;color:#fff;background:rgba(0,0,0,.3);border-radius:6px;padding:3px 8px;margin-left:4px;white-space:nowrap;vertical-align:middle}
 .codechip{font-family:var(--display);font-weight:800;font-size:16px;color:#fff;background:rgba(0,0,0,.3);border-radius:6px;padding:3px 8px;letter-spacing:.08em;vertical-align:middle}
 .codebig{font-family:var(--display);font-weight:800;font-size:64px;letter-spacing:.2em;text-align:center;color:var(--gold);line-height:1}
 .claims{display:flex;flex-direction:column;gap:6px}
@@ -1877,6 +1878,153 @@ function cricketRest(){
   save(); render();
 }
 
+/* ---------- camera scoring: darts sent by camera.html on a phone ----------
+   The tablet makes a code (games/{CODE}/cam). The phone writes the live visit to cam/visit
+   and each finished visit to cam/turns; we apply finished visits to the current game here. */
+const CAM_KEY = "dartsScorer.cam";
+let cam = null;          // { code }
+let camVisit = null;     // what the camera sees this turn (live)
+let camRefs = [], camInfoLast = "";
+function camSaved(){ try{ return JSON.parse(localStorage.getItem(CAM_KEY) || "null"); }catch(e){ return null; } }
+async function camLink(){
+  try{ await fbInit(); }catch(e){ msg("Couldn't reach the online service. Check your connection."); return; }
+  if(!user){ msg("Log in first"); return; }
+  let code = newCode();
+  try{
+    for(let k=0;k<6;k++){ const s = await fb.ref(`games/${code}`).get(); if(!s.exists()) break; code = newCode(); }
+    await fb.ref(`games/${code}/cam`).set({ host: deviceId, created: firebase.database.ServerValue.TIMESTAMP });
+  }catch(e){ msg("Couldn't set up the camera link. Check your connection."); return; }
+  cam = { code }; try{ localStorage.setItem(CAM_KEY, JSON.stringify(cam)); }catch(e){}
+  await camListen(); render();
+}
+function camUnlink(){
+  camStop();
+  if(cam && fb) fb.ref(`games/${cam.code}/cam`).remove().catch(()=>{});
+  cam = null; camVisit = null; try{ localStorage.removeItem(CAM_KEY); }catch(e){}
+  render();
+}
+function camStop(){ camRefs.forEach(r=>r.off()); camRefs = []; }
+async function camListen(){
+  camStop(); if(!cam || !fb) return;
+  const base = fb.ref(`games/${cam.code}/cam`), turns = base.child("turns"), live = base.child("visit");
+  try{ await turns.remove(); }catch(e){}          // drop anything left over from before
+  live.on("value", s=>{ camVisit = s.val(); if(screen==="game") render(); });
+  turns.on("child_added", s=>{ const t = s.val(); s.ref.remove().catch(()=>{}); camVisit = null; if(t) camApply(Object.values(t.darts || {})); });
+  camRefs = [live, turns]; camInfoLast = "";
+}
+cam = camSaved();
+(function camWait(){ if(!cam) return; if(fb && user) camListen(); else setTimeout(camWait, 1000); })();
+
+// tell the camera phone who is up
+function camInfo(){
+  if(!cam || !fb || !user) return;
+  const o = { name:"", line:"" };
+  try{
+    if(screen==="game" && match && !match.over){
+      const g = match.game; o.name = whoName();
+      if(match.cork) o.line = "Bull-off: enter on the scoreboard";
+      else if(is01(g)) o.line = `${match.leg.p[match.cur].score} left`;
+      else if(isCO(g)) o.line = `${match.leg.p[match.cur].left} left`;
+      else if(g==="killer") o.line = match.leg.phase==="play" ? "Killer" : "Throw for your number";
+      else if(g==="halveit") o.line = `Target ${halveTarget()}`;
+      else if(isRG(g)){ const t = rgTarget(); o.line = `${shortName(g)} · aiming at ${t===25 ? "Bull" : t}`; }
+      else o.line = shortName(g);
+    } else o.line = match && match.over ? "Game over" : "No game running";
+  }catch(e){}
+  const k = JSON.stringify(o); if(k===camInfoLast) return; camInfoLast = k;
+  fb.ref(`games/${cam.code}/cam/info`).set(o).catch(()=>{});
+}
+function camChip(){
+  if(!cam) return "";
+  const ds = camVisit && camVisit.darts ? Object.values(camVisit.darts) : [];
+  return ` <span class="camchip">📷 ${ds.length ? ds.map(d=>dartLabel(+d.n, +d.m)).join(" ") : "ready"}</span>`;
+}
+function camSettingsHtml(){
+  const url = location.href.split("#")[0].split("?")[0].replace(/[^/]*$/, "") + "camera.html";
+  return `<div class="label">Camera scoring (beta)</div>
+    <div class="card">
+      ${cam ? `<strong>Linked · code ${esc(cam.code)}</strong>
+        <div class="hint">On the camera phone, open the camera page and enter this code. The darts it sees go into the game on this device when the darts are pulled out or Next is tapped on the phone. You can still fix anything here with Undo.</div>
+        <button type="button" class="secondary" data-act="camOff">Unlink camera</button>`
+      : `<div class="hint">Score automatically with a phone's camera pointed at the board. Tap below to get a code, then open the camera page on the phone (logged in to the same account) and type it in.</div>
+        <button type="button" class="primary" data-act="camLink">Link a camera</button>`}
+      <div class="hint">Camera page: <a href="camera.html" target="_blank" rel="noopener">${esc(url.replace(/^https?:\/\//, ""))}</a></div>
+    </div>`;
+}
+// apply one finished camera visit (up to 3 darts {n,m}) to whatever game is on
+function camApply(darts){
+  if(screen!=="game" || !match || match.over){ msg("Camera darts arrived, but no game is running"); return; }
+  if(online && !isMyTurn()){ msg("Camera darts ignored: it isn't this device's turn"); return; }
+  if(match.cork || pending || coAsk || ddAsk){ msg("Answer the question on screen, then enter that turn by hand"); return; }
+  if(match.turn && match.turn.length){ msg("Darts already entered by hand this turn, so the camera's turn was skipped"); return; }
+  if(entry){ entry = ""; }
+  const ds = darts.slice(0,3).map(d=>({ n:+d.n||0, m:+d.m||0 })).map(d=>d.n && d.m ? d : { n:0, m:0 });
+  const sum = ds.reduce((a,d)=>a+segVal(d.n,d.m), 0);
+  const g = match.game, who = match.cur;
+  const rest = fn => { if(!match.over && match.cur===who) fn(); save(); render(); };
+  if(is01(g)){
+    const p = match.leg.p[who], dbl = match.opts.outMode==="double", rem = p.score;
+    let isIn = p.isIn, total = 0, atDbl = 0;
+    // darts at the double: thrown while what's left could be finished with one double
+    const dd = fn => { fn(); if(ddAsk && match){ answerDD(Math.max(ddAsk.min, Math.min(ddAsk.max, atDbl))); } };
+    for(let k=0;k<ds.length;k++){
+      const d = ds[k], now = rem - total;
+      if(isIn && (now===50 || (now<=40 && now%2===0))) atDbl++;
+      if(!isIn){ if(d.m===2) isIn = true; else continue; }
+      total += segVal(d.n, d.m);
+      const left = rem - total;
+      if(left===0){ if(dbl && d.m!==2) return camBust(atDbl); return dd(()=>finish(k+1)); }
+      if(left<0 || (dbl && left===1)) return camBust(atDbl);
+    }
+    return dd(()=>submitScore(total));
+  }
+  if(isCO(g)){
+    const left = match.leg.p[who].left, room = coMaxDarts(g) - match.leg.p[who].used;
+    let total = 0;
+    for(let k=0;k<ds.length;k++){
+      total += segVal(ds[k].n, ds[k].m);
+      if(total===left){ if(ds[k].m===2 && k+1<=room) return coFinish(k+1); return coVisit(180); }
+      if(total>left || left-total===1) return coVisit(180);
+    }
+    return coVisit(total);
+  }
+  if(g==="killer"){
+    if(match.leg.phase!=="play"){ const d = ds.find(x=>x.n); if(d) pickNumber(d.n); else msg("No number seen. Throw again or pick it on screen."); return; }
+    for(const d of ds){ if(match.over || match.cur!==who) break; killerDart(d.n, d.m||1); }
+    return rest(cricketRest);
+  }
+  if(g==="halveit"){
+    const t = halveTarget();
+    if(t==="EVEN" || t==="ODD") return halveTotal(sum);
+    if(t==="CHOICE" && !match.choice){ msg("Pick the Choice number on screen, then enter the darts"); return; }
+    for(const d of ds){ if(match.cur!==who) break; halveDart(d.n, d.m||1); }
+    return rest(cricketRest);
+  }
+  if(isRG(g)){
+    const t = rgTarget();
+    if(g==="bobs") return bobsHits(ds.filter(d=>d.n===t && d.m===2).length);
+    if(g==="countup") return countupTotal(sum);
+    for(const d of ds){
+      if(match.over || match.cur!==who) break;
+      if(g==="golf") rgDart(d.n===t ? t : 0, d.n===t ? d.m : 0);
+      else if(g==="atc"){ const tt = rgTarget(); rgDart(d.n===tt ? tt : 0, 1); }
+      else rgDart(d.n, d.m||1);
+    }
+    return rest(rgRest);
+  }
+  for(const d of ds){ if(match.over || match.cur!==who) break; throwDart(d.n, d.m||1); }   // cricket, cut-throat
+  rest(cricketRest);
+}
+function camBust(atDbl){
+  const L = match.leg, i = match.cur, p = L.p[i], rem = p.score;
+  snapshot();
+  p.darts += 3; p.turns++;
+  L.log.push({ i, v:0, left:rem, bust:true }); toast("Bust", true);
+  const li = tl({ k:"01", p:i, v:0, bust:true, start:rem, left:rem });
+  if(match.opts.outMode==="double" && rem<=50 && checkout(rem,3,true) && profilesOn() && prefs.ddAsk && match.tlog[li]) match.tlog[li].dd = Math.min(3, atDbl||0);
+  nextPlayer(); save(); render();
+}
+
 /* legs, sets, match */
 function endLeg(w, info){
   const L = match.leg;
@@ -2316,7 +2464,7 @@ function renderBar(){
   let s = "";
   if(n===2 && !kil) s = o.sets>1 ? `${match.players[0].sets}-${match.players[1].sets} · ${match.players[0].legs}-${match.players[1].legs}` : `${match.players[0].legs} - ${match.players[1].legs}`;
   return `<div class="bar"><button type="button" class="ib" data-act="quit" aria-label="Menu">✕</button>
-    <span class="bt">${match.base==="medley" ? "Medley · " : ""}${match.game==="hammer" ? "Hammer" : shortName(match.game)} · ${t}</span><span class="bs">${s}${online ? ` <button type="button" class="codechip" data-act="share">● ${esc(online.code)}</button>` : ""}</span>
+    <span class="bt">${match.base==="medley" ? "Medley · " : ""}${match.game==="hammer" ? "Hammer" : shortName(match.game)} · ${t}</span><span class="bs">${s}${online ? ` <button type="button" class="codechip" data-act="share">● ${esc(online.code)}</button>` : ""}${camChip()}</span>
     <button type="button" class="ib" data-act="undo" aria-label="Undo" ${hist.length?"":"disabled"}>↶</button></div>`;
 }
 /* calculator for typed totals: digits, × and + (e.g. 2+9+5×3) */
@@ -2582,6 +2730,7 @@ function renderSettings(){
     <div class="row"><button type="button" class="ghost small" data-act="settingsBack">‹ Back</button><span class="chip">Saved on this device</span></div>
     <h1>${GEAR.replace('<svg','<svg style="width:32px;height:32px"')}Settings</h1>
     ${prefsHtml()}
+    ${camSettingsHtml()}
     <div class="label">Colour scheme</div>
     <div class="themes">
       ${THEMES.map(t=>`<button type="button" class="theme ${theme.preset===t.id?"on":""}" data-theme="${t.id}">${sw(t)}<span>${esc(t.name)}</span><small>${esc(t.note)}</small></button>`).join("")}
@@ -2993,6 +3142,7 @@ function fitGame(){
 }
 window.addEventListener("resize", ()=>{ if(screen==="game") fitGame(); });
 function render(){
+  if(cam) setTimeout(camInfo, 0);
   if(screen==="setup" && lastScreen!=="setup" && lastScreen!=="settings") setupStep = 1;
   lastScreen = screen;
   if(screen==="game" && match){
@@ -3023,6 +3173,8 @@ app.addEventListener("click", e=>{
   }
   if(d.act==="settings"){ settingsFrom = screen; screen = "settings"; window.scrollTo(0,0); render(); return; }
   if(d.act==="settingsBack"){ screen = settingsFrom==="settings" ? "setup" : settingsFrom; render(); return; }
+  if(d.act==="camLink"){ camLink(); return; }
+  if(d.act==="camOff"){ camUnlink(); return; }
   if(d.act==="themeReset"){ theme = { preset:"icon" }; saveTheme(); render(); return; }
   if(d.pref!==undefined){
     const v = d.val==="true" ? true : d.val==="false" ? false : d.val;

@@ -62,6 +62,17 @@ which simply loads this site, so pushing to `main` updates the Android app too.
 - Hammer Cricket: 20, 19, 18, Wild, 17, 16, 15, Wild. Darts score ×1/×2/×3 by throw order (final round ×1/×3/×5); a full miss costs 3× the number. Open or Masters.
 - Medley: legs alternate 501 then Cricket; on the final leg the bull-off winner picks the game and throws first.
 
+## Camera scoring (beta, built 2026-11-12)
+- `camera.html`: standalone page for a phone on a stand pointed at the board. 4-tap calibration (middle of D20, D6, D3, D11) → homography;
+  frame differencing finds each new dart, `findTip` picks the tip end (camera-side setting, or flight width), `scoreAt` scores it.
+  Darts pulled out (pixels return to the empty-board frame) = turn over. Tap the picture to add/move a dart; tap a slot to fix it.
+  Settings saved in localStorage `dartsScorer.camera`. Pure maths sits between `// CORE START` and `// CORE END`.
+- Link: Settings → Camera scoring → Link a camera (`camLink`) makes `games/{CODE}/cam` (host). Phone writes live darts to `cam/visit`
+  and each finished visit to `cam/turns` (push); tablet applies with `camApply(darts)` (handles every game type) and deletes it.
+  Tablet writes who's up to `cam/info` (`camInfo`). Chip in the game bar: `camChip`. Saved link: localStorage `dartsScorer.cam`.
+- Both devices must be logged in to the same Firebase project (same origin shares the login).
+- `sw.js` caches camera.html under its own key (navigations used to overwrite the cached index.html).
+
 ## Planned next: Autodarts auto-scoring (steel-tip)
 Build it as a separate "bridge" page that joins an online game by code and only sends darts (segment + multiplier)
 into the existing engine, so every game and rule automatically works with auto-scoring.

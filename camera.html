@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Darts Scorer · Camera</title>
+<meta name="theme-color" content="#140f1f">
+<link rel="icon" href="icon-192.png">
+<style>
+:root{--bg:#120d1c;--card:#1e1630;--line:#3a2d55;--accent:#8b4dff;--gold:#f3e3b5;--red:#e0393e;--green:#1fa25a;--text:#f4f0fa;--mute:#a99fbd}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body{padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+button{font:inherit;color:inherit;border:0;border-radius:10px;padding:12px 14px;background:var(--card);border:1px solid var(--line);cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);font-weight:700}
+button.go{background:var(--green);border-color:var(--green);font-weight:700}
+button.on{outline:2px solid var(--gold)}
+button:disabled{opacity:.4}
+input,select{font:inherit;color:var(--text);background:#0c0814;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+a{color:var(--gold)}
+header{display:flex;align-items:center;gap:8px;padding:8px 10px}
+header h1{font-size:18px;margin:0;flex:1}
+.chip{font-size:13px;padding:4px 10px;border-radius:99px;background:var(--card);border:1px solid var(--line);white-space:nowrap}
+.chip.ok{border-color:var(--green);color:#9ff0c0}
+#stage{position:relative;margin:0 6px;border-radius:12px;overflow:hidden;background:#000;touch-action:none}
+#view{display:block;width:100%;height:auto;max-height:62vh;object-fit:contain;margin:0 auto}
+#loupe{position:absolute;width:132px;height:132px;border-radius:50%;border:3px solid var(--gold);pointer-events:none;display:none;box-shadow:0 4px 20px #000a}
+#banner{position:absolute;left:8px;right:8px;top:8px;padding:8px 12px;border-radius:10px;background:#000b;font-weight:600;text-align:center;pointer-events:none}
+#banner:empty{display:none}
+#up{margin:8px 10px 0;font-size:15px;color:var(--mute);min-height:20px}
+#up b{color:var(--text)}
+.visit{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;margin:8px 10px}
+.slot{font-size:28px;font-weight:800;text-align:center;padding:10px 4px;border-radius:12px;background:var(--card);border:1px solid var(--line);min-height:62px}
+.slot.t{color:#ff8a8e}.slot.d{color:#7fe0a6}.slot.miss{color:var(--mute)}
+.slot.edit{outline:3px solid var(--gold)}
+.slot small{display:block;font-size:11px;font-weight:500;color:var(--mute)}
+.total{font-size:30px;font-weight:800;color:var(--gold);display:flex;align-items:center;padding:0 8px}
+.row{display:flex;gap:8px;margin:8px 10px;flex-wrap:wrap}
+.row > button{flex:1}
+.panel{margin:10px;padding:12px;border-radius:12px;background:var(--card);border:1px solid var(--line)}
+.panel h2{font-size:16px;margin:0 0 6px}
+.hint{color:var(--mute);font-size:14px;margin:4px 0}
+.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:8px}
+.grid button{padding:12px 0;font-weight:700;font-size:18px}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
+label.line{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0}
+label.line span small{display:block;color:var(--mute);font-size:13px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#000e;border:1px solid var(--line);padding:10px 16px;border-radius:10px;z-index:9;max-width:90vw;text-align:center}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <a href="./" class="chip" style="text-decoration:none;color:var(--text)">‹ App</a>
+  <h1>Camera scoring <small style="color:var(--mute);font-weight:400">beta</small></h1>
+  <span class="chip" id="linkchip">Not linked</span>
+</header>
+<div id="stage"><canvas id="view" width="16" height="9"></canvas><canvas id="loupe" width="132" height="132"></canvas><div id="banner"></div></div>
+<div id="up"></div>
+<div class="visit" id="visit"></div>
+<div id="controls"></div>
+<div id="panel"></div>
+
+<script>
+/* ======================= CORE (pure maths, no DOM) ======================= */
+// CORE START
+const SEG = [20,1,18,4,13,6,10,15,2,17,3,19,7,16,8,11,14,9,12,5];
+// steel-tip board radii in mm (WDF/PDC spec)
+const RAD = { bi:6.35, bo:15.9, ti:99, to:107, di:162, dout:170 };
+// calibration targets: middle of these doubles, board coords in mm (x right, y up)
+const CAL = [
+  { name:"double 20", x:0,    y:166 },
+  { name:"double 6",  x:166,  y:0   },
+  { name:"double 3",  x:0,    y:-166},
+  { name:"double 11", x:-166, y:0   }
+];
+function scoreAt(x, y){
+  const r = Math.hypot(x, y);
+  if(r <= RAD.bi) return { n:25, m:2 };
+  if(r <= RAD.bo) return { n:25, m:1 };
+  if(r > RAD.dout) return { n:0, m:0 };
+  const a = Math.atan2(y, x) * 180 / Math.PI;
+  let k = Math.round((90 - a) / 18); k = ((k % 20) + 20) % 20;
+  const m = r >= RAD.di ? 2 : (r >= RAD.ti && r <= RAD.to) ? 3 : 1;
+  return { n:SEG[k], m };
+}
+function label(d){ if(!d || d.n===0) return "Miss"; if(d.n===25) return d.m===2 ? "Bull" : "25"; return (d.m===3?"T":d.m===2?"D":"") + d.n; }
+function value(d){ return d && d.n ? d.n * d.m : 0; }
+function gauss(A, b){
+  const n = b.length, M = A.map((r,i)=>r.concat([b[i]]));
+  for(let c=0;c<n;c++){
+    let p = c; for(let r=c+1;r<n;r++) if(Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    [M[c], M[p]] = [M[p], M[c]];
+    if(Math.abs(M[c][c]) < 1e-12) return null;
+    for(let r=0;r<n;r++){ if(r===c) continue; const f = M[r][c] / M[c][c]; for(let k=c;k<=n;k++) M[r][k] -= f * M[c][k]; }
+  }
+  return M.map((r,i)=>r[n] / r[i]);
+}
+// homography mapping src points -> dst points (4 pairs)
+function solveH(src, dst){
+  const A = [], b = [];
+  for(let i=0;i<4;i++){
+    const [x,y] = src[i], [u,v] = dst[i];
+    A.push([x,y,1,0,0,0,-u*x,-u*y]); b.push(u);
+    A.push([0,0,0,x,y,1,-v*x,-v*y]); b.push(v);
+  }
+  const h = gauss(A, b); if(!h) return null;
+  return [h[0],h[1],h[2],h[3],h[4],h[5],h[6],h[7],1];
+}
+function applyH(H, x, y){ const w = H[6]*x + H[7]*y + H[8]; return [(H[0]*x + H[1]*y + H[2]) / w, (H[3]*x + H[4]*y + H[5]) / w]; }
+function inv3(m){
+  const [a,b,c,d,e,f,g,h,i] = m, A = e*i-f*h, B = -(d*i-f*g), C = d*h-e*g, det = a*A + b*B + c*C;
+  if(Math.abs(det) < 1e-12) return null;
+  return [A/det, -(b*i-c*h)/det, (b*f-c*e)/det, B/det, (a*i-c*g)/det, -(a*f-c*d)/det, C/det, -(a*h-b*g)/det, (a*e-b*d)/det];
+}
+// changed-pixel map between two RGBA frames inside mask; returns count
+function diffMap(a, b, mask, thr, out){
+  let c = 0;
+  for(let i=0, p=0; i<mask.length; i++, p+=4){
+    if(!mask[i]){ out[i] = 0; continue; }
+    const d = Math.abs(a[p]-b[p]) + Math.abs(a[p+1]-b[p+1]) + Math.abs(a[p+2]-b[p+2]);
+    if(d > thr){ out[i] = 1; c++; } else out[i] = 0;
+  }
+  return c;
+}
+// drop speckle: keep pixels with at least 2 changed neighbours
+function despeckle(m, W, H, out){
+  out.fill(0);
+  for(let y=1;y<H-1;y++) for(let x=1;x<W-1;x++){
+    const i = y*W + x; if(!m[i]) continue;
+    const n = m[i-1] + m[i+1] + m[i-W] + m[i+W] + m[i-W-1] + m[i-W+1] + m[i+W-1] + m[i+W+1];
+    if(n >= 2) out[i] = 1;
+  }
+}
+// largest 8-connected blob, returns array of pixel indices
+function largestBlob(m, W, H){
+  const seen = new Uint8Array(m.length), stack = new Int32Array(m.length);
+  let best = null;
+  for(let s=0;s<m.length;s++){
+    if(!m[s] || seen[s]) continue;
+    let sp = 0, list = []; stack[sp++] = s; seen[s] = 1;
+    while(sp){
+      const i = stack[--sp]; list.push(i);
+      const x = i % W, y = (i / W) | 0;
+      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+        const nx = x+dx, ny = y+dy; if(nx<0||ny<0||nx>=W||ny>=H) continue;
+        const j = ny*W + nx; if(m[j] && !seen[j]){ seen[j] = 1; stack[sp++] = j; }
+      }
+    }
+    if(!best || list.length > best.length) best = list;
+  }
+  return best || [];
+}
+// find the tip of a dart blob. toBoard maps image->board mm; camDir is the board-plane
+// direction the camera sits on ({x,y} unit vector) or null to judge by shape (flights are wide).
+function findTip(blob, W, toBoard, camDir){
+  const n = blob.length; if(!n) return null;
+  let mx = 0, my = 0; for(const i of blob){ mx += i % W; my += (i / W) | 0; } mx /= n; my /= n;
+  let sxx = 0, syy = 0, sxy = 0;
+  for(const i of blob){ const dx = i % W - mx, dy = ((i / W) | 0) - my; sxx += dx*dx; syy += dy*dy; sxy += dx*dy; }
+  const ang = 0.5 * Math.atan2(2*sxy, sxx - syy), vx = Math.cos(ang), vy = Math.sin(ang);
+  let tmin = Infinity, tmax = -Infinity; const ts = new Float32Array(n), ps = new Float32Array(n);
+  blob.forEach((i,k)=>{ const dx = i % W - mx, dy = ((i / W) | 0) - my; ts[k] = dx*vx + dy*vy; ps[k] = -dx*vy + dy*vx; if(ts[k]<tmin) tmin = ts[k]; if(ts[k]>tmax) tmax = ts[k]; });
+  const len = tmax - tmin;
+  if(len < 6) return { x:mx, y:my, len, how:"blob" };
+  const endPoint = lo => {
+    const band = Math.max(1.5, len * 0.04); let x = 0, y = 0, c = 0;
+    blob.forEach((i,k)=>{ if(lo ? ts[k] <= tmin + band : ts[k] >= tmax - band){ x += i % W; y += (i / W) | 0; c++; } });
+    return { x:x/c, y:y/c };
+  };
+  const spread = lo => { // how wide the last quarter is
+    const band = len * 0.25; let s = 0, c = 0, ss = 0;
+    for(let k=0;k<n;k++) if(lo ? ts[k] <= tmin + band : ts[k] >= tmax - band){ s += ps[k]; ss += ps[k]*ps[k]; c++; }
+    if(!c) return 0; const m = s/c; return c * Math.sqrt(Math.max(0, ss/c - m*m) + 1);
+  };
+  const A = endPoint(true), B = endPoint(false);
+  let tipA = spread(true) < spread(false), how = "shape";
+  if(camDir && toBoard){
+    const a = toBoard(A.x, A.y), b = toBoard(B.x, B.y);
+    const da = a[0]*camDir.x + a[1]*camDir.y, db = b[0]*camDir.x + b[1]*camDir.y;
+    const along = Math.abs(da - db), span = Math.hypot(a[0]-b[0], a[1]-b[1]);
+    if(span > 0 && along / span > 0.35){ tipA = da > db; how = "side"; }
+  }
+  const T = tipA ? A : B;
+  return { x:T.x, y:T.y, len, how, other: tipA ? B : A };
+}
+// CORE END
+
+/* ============================ app ============================ */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyC8Sr2pECf2HQO8fUOI8vSeaainMrXQUSs",
+  authDomain: "darts-scorer-c9db4.firebaseapp.com",
+  databaseURL: "https://darts-scorer-c9db4-default-rtdb.firebaseio.com",
+  projectId: "darts-scorer-c9db4",
+  storageBucket: "darts-scorer-c9db4.firebasestorage.app",
+  messagingSenderId: "1060133831533",
+  appId: "1:1060133831533:web:69c6586d7ed8fcff5b5064"
+};
+const STORE = "dartsScorer.camera";
+const DIRS = { below:{x:0,y:-1}, above:{x:0,y:1}, left:{x:-1,y:0}, right:{x:1,y:0}, auto:null };
+const $ = s => document.querySelector(s);
+const view = $("#view"), vctx = view.getContext("2d", { willReadFrequently:true });
+const loupe = $("#loupe"), lctx = loupe.getContext("2d");
+const work = document.createElement("canvas"), wctx = work.getContext("2d", { willReadFrequently:true });
+let video = null, stream = null, W = 0, H = 0, N = 0;
+let cfg = load();
+let mode = "start";          // start | calib | play
+let calibStep = 0, dragIdx = -1;
+let Hb2i = null, Hi2b = null, mask = null, maskArea = 0;
+let ref = null, prev = null, visitStart = null, cur = null;
+let dmap = null, dclean = null, lastBlob = null;
+let moving = false, still = 0, lastRefresh = 0, bigSince = 0, lastTick = 0;
+let visit = newVisit(), editIdx = -1, paused = false;
+let fb = null, user = null, wake = null, info = null;
+
+function load(){
+  const d = { pts:null, thr:70, camPos:"below", autoNext:true, debug:false, link:null };
+  try{ return Object.assign(d, JSON.parse(localStorage.getItem(STORE) || "{}")); }catch(e){ return d; }
+}
+function saveCfg(){ try{ localStorage.setItem(STORE, JSON.stringify(cfg)); }catch(e){} }
+function newVisit(){ return { seq: Date.now(), darts: [] }; }
+function toast(t){ const el = document.createElement("div"); el.className = "toast"; el.textContent = t; document.body.appendChild(el); setTimeout(()=>el.remove(), 2200); }
+function vibrate(ms){ try{ navigator.vibrate && navigator.vibrate(ms); }catch(e){} }
+
+/* ---------- camera ---------- */
+async function startCamera(){
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ audio:false, video:{ facingMode:{ ideal:"environment" }, width:{ ideal:1920 }, height:{ ideal:1080 } } });
+  }catch(e){ toast("Couldn't open the camera. Allow camera access for this site and try again."); return; }
+  video = document.createElement("video"); video.playsInline = true; video.muted = true; video.srcObject = stream;
+  await video.play();
+  await new Promise(r => { const chk = () => video.videoWidth ? r() : setTimeout(chk, 50); chk(); });
+  sizeFrames();
+  try{ wake = await navigator.wakeLock.request("screen"); }catch(e){}
+  mode = cfg.pts ? "play" : "calib"; calibStep = cfg.pts ? 4 : 0;
+  if(cfg.pts) applyCalib(); else cfg.pts = [];
+  requestAnimationFrame(loop); render();
+}
+function sizeFrames(){
+  const vw = video.videoWidth, vh = video.videoHeight, s = 720 / Math.max(vw, vh);
+  const nw = Math.round(vw * s), nh = Math.round(vh * s);
+  if(nw === W && nh === H) return;
+  if(W && cfg.pts && cfg.pts.length){ cfg.pts = cfg.pts.map(p => [p[0] * nw / W, p[1] * nh / H]); }
+  W = nw; H = nh; N = W * H;
+  work.width = view.width = W; work.height = view.height = H;
+  dmap = new Uint8Array(N); dclean = new Uint8Array(N);
+  ref = prev = visitStart = null;
+  if(cfg.pts && cfg.pts.length===4) applyCalib();
+}
+document.addEventListener("visibilitychange", async () => {
+  if(document.visibilityState === "visible" && stream){ try{ wake = await navigator.wakeLock.request("screen"); }catch(e){} }
+});
+
+/* ---------- calibration ---------- */
+function applyCalib(){
+  const src = CAL.map(c => [c.x, c.y]);
+  Hb2i = solveH(src, cfg.pts); Hi2b = Hb2i && inv3(Hb2i);
+  if(!Hi2b){ toast("Those points don't work. Calibrate again."); cfg.pts = []; mode = "calib"; calibStep = 0; return; }
+  mask = new Uint8Array(N); maskArea = 0;
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+    const b = applyH(Hi2b, x, y), r = Math.hypot(b[0], b[1]);
+    if(r < 260 && isFinite(r)){ mask[y*W + x] = 1; maskArea++; }
+  }
+  ref = prev = visitStart = null; saveCfg();
+}
+const toBoard = (x, y) => applyH(Hi2b, x, y);
+const toImage = (x, y) => applyH(Hb2i, x, y);
+
+/* ---------- main loop ---------- */
+function loop(t){
+  if(!video) return;
+  if(video.videoWidth && (Math.round(video.videoWidth * 720 / Math.max(video.videoWidth, video.videoHeight)) !== W)) sizeFrames();
+  wctx.drawImage(video, 0, 0, W, H);
+  if(mode === "play" && Hi2b && !paused && t - lastTick > 120){ lastTick = t; analyse(t); }
+  draw();
+  requestAnimationFrame(loop);
+}
+function grab(){ return wctx.getImageData(0, 0, W, H).data; }
+function analyse(t){
+  cur = grab();
+  if(!ref){ ref = cur; prev = cur; visitStart = cur; return; }
+  const motion = diffMap(cur, prev, mask, cfg.thr + 20, dmap);
+  prev = cur;
+  const minDart = 40, big = Math.max(2500, maskArea * 0.05);
+  if(motion > 25){ moving = true; still = 0; return; }
+  if(moving){ still++; if(still < 3) return; moving = false; settled(t, minDart, big); return; }
+  // idle: if a big change is just sitting there (lighting, someone standing), accept it after a while
+  if(bigSince && t - bigSince > 5000){ bigSince = 0; ref = cur; if(!visit.darts.length) visitStart = cur; return; }
+  if(t - lastRefresh > 2500){
+    lastRefresh = t;
+    const c = diffMap(cur, ref, mask, cfg.thr, dmap);
+    if(c < minDart / 2){ ref = cur; if(!visit.darts.length) visitStart = cur; }
+  }
+}
+function settled(t, minDart, big){
+  const c = diffMap(cur, ref, mask, cfg.thr, dmap);
+  if(c < minDart){ bigSince = 0; return; }   // a hand went past, nothing changed
+  if(visit.darts.length && dartsGone()){ bigSince = 0; ref = cur; takeout(); return; }
+  if(c > big){
+    if(!visit.darts.length){ ref = cur; visitStart = cur; bigSince = 0; return; }
+    bigSince = bigSince || t; return; // someone in front of the board with darts still in it
+  }
+  bigSince = 0;
+  despeckle(dmap, W, H, dclean);
+  const blob = largestBlob(dclean, W, H);
+  if(blob.length < minDart){ return; }
+  lastBlob = blob;
+  if(visit.darts.length >= 3){ ref = cur; banner("4th dart ignored. Pull the darts or tap Next.", 2000); return; }
+  const tip = findTip(blob, W, toBoard, DIRS[cfg.camPos]);
+  const b = toBoard(tip.x, tip.y), s = scoreAt(b[0], b[1]);
+  const sample = []; const step = Math.max(1, Math.floor(blob.length / 400)); for(let k=0;k<blob.length;k+=step) sample.push(blob[k]);
+  visit.darts.push({ n:s.n, m:s.m, bx:b[0], by:b[1], auto:true, pix:sample });
+  ref = cur; vibrate(40); sendVisit(); renderVisit();
+}
+// are the darts of this visit gone? compare their pixels with the empty-board frame
+function dartsGone(){
+  if(!visitStart) return true;
+  let same = 0, all = 0;
+  for(const d of visit.darts){ if(!d.pix) continue; for(const i of d.pix){ const p = i*4;
+    const diff = Math.abs(cur[p]-visitStart[p]) + Math.abs(cur[p+1]-visitStart[p+1]) + Math.abs(cur[p+2]-visitStart[p+2]);
+    all++; if(diff <= cfg.thr) same++; } }
+  return !all || same / all > 0.6;
+}
+function takeout(){
+  if(!cfg.autoNext){ visitStart = cur; banner("Darts pulled. Tap Next when ready.", 2000); return; }
+  nextTurn(true);
+}
+function nextTurn(auto){
+  editIdx = -1;
+  const done = { seq: visit.seq, darts: visit.darts.map(d => ({ n:d.n, m:d.m })) };
+  sendDone(done);
+  banner(`${done.darts.map(label).join("  ") || "No darts"} = ${done.darts.reduce((a,d)=>a+value(d),0)}${auto ? " · darts pulled" : ""}`, 1800);
+  visit = newVisit(); if(cur) { ref = cur; visitStart = cur; }
+  sendVisit(); renderVisit();
+}
+
+/* ---------- drawing ---------- */
+let bannerTimer = 0;
+function banner(text, ms){ $("#banner").textContent = text; clearTimeout(bannerTimer); if(ms) bannerTimer = setTimeout(()=>$("#banner").textContent = "", ms); }
+function draw(){
+  vctx.drawImage(work, 0, 0);
+  if(cfg.debug && lastBlob && mode === "play"){
+    const img = vctx.getImageData(0, 0, W, H), d = img.data;
+    for(const i of lastBlob){ d[i*4] = 255; d[i*4+1] = 40; d[i*4+2] = 40; }
+    vctx.putImageData(img, 0, 0);
+  }
+  const lw = Math.max(2, W / 300);
+  if(Hb2i && mode !== "start"){
+    vctx.strokeStyle = "rgba(243,227,181,.75)"; vctx.lineWidth = lw;
+    for(const r of [RAD.bo, RAD.ti, RAD.to, RAD.di, RAD.dout]){
+      vctx.beginPath();
+      for(let k=0;k<=96;k++){ const a = k / 96 * Math.PI * 2, p = toImage(r*Math.cos(a), r*Math.sin(a)); k ? vctx.lineTo(p[0], p[1]) : vctx.moveTo(p[0], p[1]); }
+      vctx.stroke();
+    }
+    vctx.beginPath();
+    for(let k=0;k<20;k++){ const a = (99 - k*18) * Math.PI / 180, p = toImage(RAD.bo*Math.cos(a), RAD.bo*Math.sin(a)), q = toImage(RAD.dout*Math.cos(a), RAD.dout*Math.sin(a)); vctx.moveTo(p[0], p[1]); vctx.lineTo(q[0], q[1]); }
+    vctx.stroke();
+    const p20 = toImage(0, 192); vctx.fillStyle = "#f3e3b5"; vctx.font = `bold ${Math.round(W/30)}px system-ui`; vctx.textAlign = "center"; vctx.fillText("20", p20[0], p20[1]);
+  }
+  if(mode === "calib" || (mode === "play" && dragIdx >= 0)){
+    (cfg.pts || []).forEach((p, i) => { vctx.fillStyle = i === dragIdx ? "#f3e3b5" : "#8b4dff"; vctx.beginPath(); vctx.arc(p[0], p[1], lw*4, 0, 7); vctx.fill(); });
+  }
+  if(mode === "play" && Hb2i){
+    visit.darts.forEach((d, i) => {
+      if(d.bx === undefined) return;
+      const p = toImage(d.bx, d.by);
+      vctx.strokeStyle = i === editIdx ? "#f3e3b5" : "#2bff88"; vctx.lineWidth = lw * 1.5;
+      vctx.beginPath(); vctx.arc(p[0], p[1], lw * 5, 0, 7); vctx.stroke();
+      vctx.fillStyle = "#000c"; vctx.fillRect(p[0] + lw*6, p[1] - lw*9, lw*22, lw*12);
+      vctx.fillStyle = "#fff"; vctx.font = `bold ${Math.round(lw*9)}px system-ui`; vctx.textAlign = "left"; vctx.fillText(label(d), p[0] + lw*7, p[1]);
+    });
+  }
+}
+
+/* ---------- touch: calibration points, moving and adding darts ---------- */
+function canvasPos(e){ // the picture is letterboxed inside the canvas box (object-fit: contain)
+  const r = view.getBoundingClientRect(), k = Math.min(r.width / W, r.height / H), ox = (r.width - W*k) / 2, oy = (r.height - H*k) / 2;
+  return { x:(e.clientX - r.left - ox) / k, y:(e.clientY - r.top - oy) / k, cx:e.clientX - r.left, cy:e.clientY - r.top };
+}
+let touchPt = null;
+view.addEventListener("pointerdown", e => {
+  if(mode === "start") return;
+  e.preventDefault(); view.setPointerCapture(e.pointerId);
+  const p = canvasPos(e); touchPt = p;
+  if(mode === "calib" && cfg.pts.length === 4){
+    let best = -1, bd = 1e9; cfg.pts.forEach((q, i) => { const d = Math.hypot(q[0]-p.x, q[1]-p.y); if(d < bd){ bd = d; best = i; } });
+    dragIdx = bd < W / 12 ? best : -1;
+  }
+  showLoupe(p);
+});
+view.addEventListener("pointermove", e => { if(!touchPt) return; const p = canvasPos(e); touchPt = p; if(dragIdx >= 0){ cfg.pts[dragIdx] = [p.x, p.y]; applyCalibLive(); } showLoupe(p); });
+view.addEventListener("pointerup", e => {
+  if(!touchPt) return; const p = canvasPos(e); touchPt = null; loupe.style.display = "none";
+  if(mode === "calib"){
+    if(dragIdx >= 0){ cfg.pts[dragIdx] = [p.x, p.y]; dragIdx = -1; applyCalibLive(); render(); return; }
+    if(cfg.pts.length < 4){ cfg.pts.push([p.x, p.y]); calibStep = cfg.pts.length; if(cfg.pts.length === 4) applyCalibLive(); render(); }
+    return;
+  }
+  if(mode === "play" && Hi2b){
+    const b = toBoard(p.x, p.y), s = scoreAt(b[0], b[1]);
+    if(editIdx >= 0 && visit.darts[editIdx]){ Object.assign(visit.darts[editIdx], s, { bx:b[0], by:b[1], auto:false }); editIdx = -1; }
+    else if(visit.darts.length < 3) visit.darts.push({ n:s.n, m:s.m, bx:b[0], by:b[1], auto:false });
+    else { toast("3 darts already. Tap one to change it."); return; }
+    vibrate(20); sendVisit(); renderVisit();
+  }
+});
+view.addEventListener("pointercancel", () => { touchPt = null; dragIdx = -1; loupe.style.display = "none"; });
+function applyCalibLive(){ const h = solveH(CAL.map(c => [c.x, c.y]), cfg.pts); if(h && inv3(h)){ Hb2i = h; Hi2b = inv3(h); } }
+function showLoupe(p){
+  const Z = 4, S = 132, src = S / Z;
+  lctx.imageSmoothingEnabled = false;
+  lctx.fillStyle = "#000"; lctx.fillRect(0, 0, S, S);
+  lctx.drawImage(view, p.x - src/2, p.y - src/2, src, src, 0, 0, S, S);
+  lctx.strokeStyle = "#ff3b3b"; lctx.lineWidth = 1.5;
+  lctx.beginPath(); lctx.moveTo(S/2, S/2 - 18); lctx.lineTo(S/2, S/2 + 18); lctx.moveTo(S/2 - 18, S/2); lctx.lineTo(S/2 + 18, S/2); lctx.stroke();
+  loupe.style.display = "block";
+  const sw = view.getBoundingClientRect().width;
+  loupe.style.left = Math.min(Math.max(0, p.cx - S/2), sw - S) + "px";
+  loupe.style.top = Math.max(0, p.cy - S - 40) + "px";
+}
+
+/* ---------- UI ---------- */
+function renderVisit(){
+  const ds = visit.darts;
+  $("#visit").innerHTML = mode !== "play" ? "" : [0,1,2].map(i => {
+    const d = ds[i];
+    if(!d) return `<button class="slot" data-slot="${i}" disabled> </button>`;
+    const cls = d.n === 0 ? "miss" : d.m === 3 ? "t" : d.m === 2 ? "d" : "";
+    return `<button class="slot ${cls} ${editIdx === i ? "edit" : ""}" data-slot="${i}">${label(d)}<small>${d.auto ? "camera" : "you"}</small></button>`;
+  }).join("") + `<div class="total">${ds.reduce((a,d)=>a+value(d),0)}</div>`;
+  renderControls();
+}
+function renderControls(){
+  const c = $("#controls");
+  if(mode !== "play"){ c.innerHTML = ""; return; }
+  if(editIdx >= 0){
+    c.innerHTML = `<div class="panel"><h2>Change dart ${editIdx + 1}</h2>
+      <div class="hint">Tap where it really is on the picture, or pick it here.</div>
+      <div class="mods">${[1,2,3].map(m => `<button data-mod="${m}" class="${pickMod===m?"on":""}">${["Single","Double","Triple"][m-1]}</button>`).join("")}</div>
+      <div class="grid">${[...Array(20)].map((_, k) => `<button data-pick="${k+1}">${k+1}</button>`).join("")}
+        <button data-pick="25" data-m="1">25</button><button data-pick="25" data-m="2">Bull</button><button data-pick="0">Miss</button>
+        <button data-act="delDart">Remove</button><button data-act="cancelEdit">Done</button></div></div>`;
+    return;
+  }
+  c.innerHTML = `<div class="row">
+      <button data-act="miss" ${visit.darts.length >= 3 ? "disabled" : ""}>+ Miss</button>
+      <button data-act="undoDart" ${visit.darts.length ? "" : "disabled"}>Undo</button>
+      <button class="go" data-act="next">Next ▶</button></div>
+    <div class="row"><button data-act="pause">${paused ? "▶ Resume" : "⏸ Pause"}</button><button data-act="recal">Calibrate</button><button data-act="rebase">Reset view</button></div>`;
+}
+let pickMod = 1;
+function render(){
+  renderVisit();
+  const p = $("#panel");
+  if(mode === "start"){
+    $("#banner").textContent = "";
+    p.innerHTML = `<div class="panel"><h2>Auto-scoring with this phone's camera</h2>
+      <div class="hint">1. Put this phone on a stand 1 to 2 metres from the board, off to one side or below it, so it looks at the board at an angle (not straight on: darts hide their own tips).<br>
+      2. Good, even lighting on the board helps a lot. Plug the phone in.<br>
+      3. Calibrate once by tapping 4 doubles. Don't move the phone afterwards.</div>
+      <button class="primary" data-act="start" style="width:100%;margin-top:8px">Start camera</button></div>` + settingsHtml();
+    return;
+  }
+  if(mode === "calib"){
+    const n = cfg.pts.length;
+    banner(n < 4 ? `Tap the middle of ${CAL[n].name.toUpperCase()}` : "Drag any dot to fine-tune. The rings should sit on the wires.");
+    p.innerHTML = `<div class="panel"><h2>Calibrate (${Math.min(n+1,4)} of 4)</h2>
+      <div class="hint">${n < 4 ? `Touch and hold, slide until the red cross is in the middle of the <b>${CAL[n].name}</b> bed (between the two outer wires), then let go. A magnifier helps you aim.` : "Check the drawn rings line up with the board wires all the way round. Drag a dot to adjust."}</div>
+      <div class="row">${n ? `<button data-act="calUndo">Undo point</button>` : ""}<button data-act="calReset">Start over</button>${n === 4 ? `<button class="primary" data-act="calDone">Looks right</button>` : ""}</div></div>`;
+    return;
+  }
+  banner(paused ? "Paused" : "", 0);
+  p.innerHTML = settingsHtml();
+  updateUp();
+}
+function settingsHtml(){
+  const linked = cfg.link && cfg.link.code;
+  return `<div class="panel"><h2>Link to the scoreboard</h2>
+    ${linked ? `<div class="hint">Linked with code <b>${cfg.link.code}</b>. Darts go to the tablet's game when you tap Next or pull the darts.</div><div class="row"><button data-act="unlink">Unlink</button></div>`
+      : `<div class="hint">On the scoreboard tablet: Settings ⚙ → Camera scoring → <b>Link a camera</b>, then type the code here. Without a link this page just adds up the darts.</div>
+      <div class="row"><input id="code" maxlength="4" placeholder="Code" style="flex:1;text-transform:uppercase" autocapitalize="characters"><button class="primary" data-act="link">Link</button></div>
+      <div class="hint" id="authhint">${user ? `Signed in as ${esc(user.email || "you")}.` : fb ? "Not signed in. Open the Darts Scorer app on this phone and log in first, then reload this page." : "Connecting…"}</div>`}
+    </div>
+    <div class="panel"><h2>Detection</h2>
+      <label class="line"><span>Where is the camera?<small>Helps find the tip end of each dart</small></span>
+        <select data-set="camPos">${[["below","Below the board"],["left","Left of the board"],["right","Right of the board"],["above","Above the board"],["auto","Not sure (judge by shape)"]].map(([v,t]) => `<option value="${v}" ${cfg.camPos===v?"selected":""}>${t}</option>`).join("")}</select></label>
+      <label class="line"><span>Sensitivity<small>Lower = picks up more. Raise it if it sees darts that aren't there.</small></span>
+        <input type="range" min="30" max="140" step="5" value="${cfg.thr}" data-set="thr" style="width:40%"></label>
+      <label class="line"><span>Next player when darts are pulled<small>Off: tap Next yourself</small></span><input type="checkbox" data-set="autoNext" ${cfg.autoNext?"checked":""}></label>
+      <label class="line"><span>Show what the camera sees as a change<small>Red = changed pixels of the last dart</small></span><input type="checkbox" data-set="debug" ${cfg.debug?"checked":""}></label>
+    </div>`;
+}
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" })[c]); }
+function updateUp(){
+  const chip = $("#linkchip");
+  if(cfg.link && cfg.link.code){ chip.textContent = `Linked ${cfg.link.code}`; chip.className = "chip ok"; } else { chip.textContent = "Not linked"; chip.className = "chip"; }
+  $("#up").innerHTML = info && mode === "play" ? `Up: <b>${esc(info.name || "")}</b>${info.line ? " · " + esc(info.line) : ""}` : "";
+}
+
+document.addEventListener("click", e => {
+  const b = e.target.closest("button"); if(!b || b.disabled) return;
+  const d = b.dataset;
+  if(d.slot !== undefined){ editIdx = editIdx === +d.slot ? -1 : +d.slot; pickMod = 1; renderVisit(); return; }
+  if(d.mod){ pickMod = +d.mod; renderControls(); return; }
+  if(d.pick !== undefined){
+    const n = +d.pick, m = n === 0 ? 0 : n === 25 ? +d.m : pickMod;
+    Object.assign(visit.darts[editIdx], { n, m, auto:false }); delete visit.darts[editIdx].bx;
+    editIdx = -1; sendVisit(); renderVisit(); return;
+  }
+  switch(d.act){
+    case "start": startCamera(); break;
+    case "calUndo": cfg.pts.pop(); calibStep = cfg.pts.length; if(cfg.pts.length < 4){ Hb2i = Hi2b = null; } render(); break;
+    case "calReset": cfg.pts = []; Hb2i = Hi2b = null; render(); break;
+    case "calDone": applyCalib(); if(Hi2b){ mode = "play"; banner("Ready. Throw!", 1500); } render(); break;
+    case "recal": mode = "calib"; render(); break;
+    case "miss": visit.darts.push({ n:0, m:0, auto:false }); sendVisit(); renderVisit(); break;
+    case "undoDart": visit.darts.pop(); editIdx = -1; if(cur) ref = cur; sendVisit(); renderVisit(); break;
+    case "next": nextTurn(false); break;
+    case "pause": paused = !paused; if(!paused && cur){ ref = null; } render(); break;
+    case "rebase": ref = null; lastBlob = null; banner("View reset", 1200); break;
+    case "delDart": visit.darts.splice(editIdx, 1); editIdx = -1; sendVisit(); renderVisit(); break;
+    case "cancelEdit": editIdx = -1; renderVisit(); break;
+    case "link": linkTo(($("#code").value || "").trim().toUpperCase()); break;
+    case "unlink": stopInfo(); cfg.link = null; saveCfg(); render(); break;
+  }
+});
+document.addEventListener("change", e => {
+  const s = e.target.dataset && e.target.dataset.set; if(!s) return;
+  cfg[s] = e.target.type === "checkbox" ? e.target.checked : e.target.type === "range" ? +e.target.value : e.target.value;
+  saveCfg(); if(s === "debug") lastBlob = cfg.debug ? lastBlob : null;
+});
+
+/* ---------- link to the scoreboard (Firebase, same account as the app) ---------- */
+function loadScript(src){ return new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
+async function fbStart(){
+  try{
+    await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js");
+    await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js");
+    await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js");
+    firebase.initializeApp(FIREBASE_CONFIG); fb = firebase.database();
+    firebase.auth().onAuthStateChanged(u => { user = u; if(u && cfg.link) startInfo(); if(mode !== "calib") render(); });
+  }catch(e){ fb = null; }
+}
+async function linkTo(code){
+  if(code.length !== 4){ toast("Codes are 4 characters"); return; }
+  if(!fb){ toast("Not connected to the internet"); return; }
+  if(!user){ toast("Log in to the Darts Scorer app on this phone first"); return; }
+  try{
+    const s = await fb.ref(`games/${code}/cam/host`).get();
+    if(!s.exists()){ toast(`No scoreboard waiting with code ${code}`); return; }
+  }catch(e){ toast("Couldn't check that code. Check your connection."); return; }
+  cfg.link = { code }; saveCfg(); startInfo(); sendVisit(); toast("Linked to the scoreboard"); render();
+}
+let infoRef = null;
+function startInfo(){ stopInfo(); if(!fb || !cfg.link) return; infoRef = fb.ref(`games/${cfg.link.code}/cam/info`); infoRef.on("value", s => { info = s.val(); updateUp(); }); }
+function stopInfo(){ if(infoRef){ infoRef.off(); infoRef = null; } info = null; }
+function sendVisit(){
+  if(!fb || !user || !cfg.link) return;
+  fb.ref(`games/${cfg.link.code}/cam/visit`).set({ seq: visit.seq, darts: visit.darts.map(d => ({ n:d.n, m:d.m })), t: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+}
+function sendDone(done){
+  if(!fb || !user || !cfg.link) return;
+  fb.ref(`games/${cfg.link.code}/cam/turns`).push(Object.assign(done, { t: firebase.database.ServerValue.TIMESTAMP })).catch(() => toast("Couldn't send that turn. Check your connection."));
+}
+
+render(); updateUp(); fbStart();
+</script>
+</body>
+</html>
