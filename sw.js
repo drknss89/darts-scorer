@@ -1,5 +1,5 @@
 /* Darts Scorer service worker: lets the app open offline and load fast.
-   The page itself is fetched fresh when online (so updates show up right away),
+   The page itself is fetched fresh when online (no-cache: always checks GitHub, skipping the 10-minute browser cache) (so updates show up right away),
    with the saved copy used when there's no signal. Online services are never cached. */
 const CACHE = "darts-v3";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
@@ -11,7 +11,7 @@ self.addEventListener("fetch", e => {
   if (/firebaseio\.com|googleapis\.com\/identitytoolkit|securetoken|script\.google|emailjs|firebaseapp\.com/.test(url.href)) return;
   if (req.mode === "navigate" || url.pathname.endsWith(".html")) {
     const file = url.pathname.split("/").pop(), key = file && file !== "index.html" ? "./" + file : "./index.html";
-    e.respondWith(fetch(req).then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put(key, copy)); return r; })
+    e.respondWith(fetch(url.href, { cache: "no-cache" }).then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put(key, copy)); return r; })
       .catch(() => caches.match(key)));
     return;
   }
