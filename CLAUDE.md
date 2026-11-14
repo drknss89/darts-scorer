@@ -79,10 +79,9 @@ which simply loads this site, so pushing to `main` updates the Android app too.
   so detection can be re-run offline on the exact frames with the CORE functions.
 - `sw.js` caches camera.html under its own key (navigations used to overwrite the cached index.html).
 
-## Killer death animations (testing, 2026-11-14)
-- `killer-test.html` = a copy of `index.html` plus the Reaper deaths. Once Ryan approves, copy those changes into `index.html` and delete the test page.
+## Killer death animations (live 2026-11-14)
 - `Reaper` module (its own `<script>` before the main one): 21 deaths (same as Ryan's "Reaper vs. the Numbers" page), `Reaper.play(num, deathIndex, getRect)`.
-- Killer `tl({k:"out"})` entries carry `dth` (random death, picked by the scoring device, so online players see the same one). `deathCheck()` (beside `callerCheck`) plays it over `.kr[data-ki=i]`. Transparent overlay blocks taps until it ends or SKIP. Flashes only cover the player's row (`.rpflash`). Pref `deaths` (Settings → Display) + "Preview a death".
+- Killer `tl({k:"out"})` entries carry `dth` (random death, picked by the scoring device, so online players see the same one). `deathCheck()` (beside `callerCheck`) plays it over `.kr[data-ki=i]`. Transparent overlay blocks taps until it ends or SKIP. Flashes only cover the player's row (`.rpflash`). The animation shrinks when there's little room above the row so the number stands on its own row. Pref `deaths` (Settings → Display) + "Preview a death".
 
 ## Planned next: Autodarts auto-scoring (steel-tip)
 Build it as a separate "bridge" page that joins an online game by code and only sends darts (segment + multiplier)
