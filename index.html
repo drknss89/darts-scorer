@@ -402,8 +402,8 @@ h1 .ring{width:38px;height:38px;flex:none;background:url(data:image/png;base64,i
 .btns{display:flex;flex-direction:column;gap:8px}
 .dchoice{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .dchoice button{height:64px;border-radius:10px;background:var(--panel-2);border:1px solid var(--line);font-family:var(--display);font-weight:800;font-size:34px}
-.toast{position:fixed;left:50%;top:30%;transform:translateX(-50%);font-family:var(--display);font-weight:800;font-size:60px;color:var(--gold);
-  text-shadow:0 4px 24px #000;pointer-events:none;z-index:20;animation:pop 1.1s ease-out forwards;white-space:nowrap}
+.toast{position:fixed;left:50%;top:30%;transform:translateX(-50%);font-family:var(--display);font-weight:800;font-size:min(60px,11vw);line-height:1.05;color:var(--gold);
+  text-shadow:0 4px 24px #000;pointer-events:none;z-index:20;animation:pop 1.1s ease-out forwards;width:max-content;max-width:92vw;text-align:center}
 .toast.bad{color:#ff3b4f}
 .toast.msg{font-size:22px;font-weight:700;color:#fff;background:var(--accent-dark);border:1px solid var(--accent);padding:10px 16px;border-radius:10px;white-space:normal;max-width:90vw;text-align:center;animation-duration:2.2s}
 @keyframes pop{0%{opacity:0;transform:translateX(-50%) scale(.7)}12%{opacity:1;transform:translateX(-50%) scale(1.04)}75%{opacity:1}100%{opacity:0;transform:translateX(-50%) scale(1)}}
@@ -753,18 +753,19 @@ def('Bullseye',3.6,s=>{const pts=pixels(s.alive,4),gy=46-s.alive.asc*.45;let bes
 FX.dim=0;
 let ov=null,fl=null,q=[],run=null,raf=0;
 function css(){if(document.getElementById('rpcss'))return;const s=document.createElement('style');s.id='rpcss';s.textContent=
-`.rpov{position:fixed;inset:0;z-index:9000;touch-action:none;background:transparent}
+`body.rp-on .ov{visibility:hidden}
+.rpov{position:fixed;inset:0;z-index:9000;touch-action:none;background:transparent}
 .rpov canvas{position:absolute;pointer-events:none;filter:drop-shadow(0 0 2px rgba(0,0,0,.95)) drop-shadow(0 0 10px rgba(0,0,0,.8))}
 .rpflash{position:absolute;border-radius:14px;opacity:0;pointer-events:none}
 .rpskip{position:absolute;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);padding:14px 30px;border-radius:999px;border:2px solid rgba(255,255,255,.85);background:rgba(15,10,22,.88);color:#fff;font:800 18px/1 system-ui,sans-serif;letter-spacing:.1em;box-shadow:0 4px 18px rgba(0,0,0,.6)}`;
 document.head.appendChild(s);}
-function open(){if(ov)return;css();ov=document.createElement('div');ov.className='rpov';
+function open(){if(ov)return;css();document.body.classList.add('rp-on');ov=document.createElement('div');ov.className='rpov';
  fl=document.createElement('div');fl.className='rpflash';cv=document.createElement('canvas');ctx=cv.getContext('2d');
  const sk=document.createElement('button');sk.type='button';sk.className='rpskip';sk.textContent='SKIP ⏭';
  sk.addEventListener('click',e=>{e.stopPropagation();q=[];close();});
  ov.addEventListener('click',e=>e.stopPropagation());
  ov.append(fl,cv,sk);document.body.appendChild(ov);}
-function close(){cancelAnimationFrame(raf);run=null;if(ov){ov.remove();ov=null;}}
+function close(){cancelAnimationFrame(raf);run=null;document.body.classList.remove('rp-on');if(ov){ov.remove();ov=null;}}
 function layout(r){const vw=innerWidth,vh=innerHeight,f=GY/H;
  /* stand the number on its own row: shrink if there isn't room above (top may poke off-screen by 20%, which is empty sky) */
  const S=Math.round(Math.max(240,Math.min(vw*.92,vh*.62,460,(r.bottom-6)/(f-.2))));
