@@ -10,7 +10,7 @@ self.addEventListener("fetch", e => {
   if (req.method !== "GET") return;
   if (/firebaseio\.com|googleapis\.com\/identitytoolkit|securetoken|script\.google|emailjs|firebaseapp\.com/.test(url.href)) return;
   if (req.mode === "navigate" || url.pathname.endsWith(".html")) {
-    const key = url.pathname.endsWith("/camera.html") ? "./camera.html" : "./index.html";
+    const file = url.pathname.split("/").pop(), key = file && file !== "index.html" ? "./" + file : "./index.html";
     e.respondWith(fetch(req).then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put(key, copy)); return r; })
       .catch(() => caches.match(key)));
     return;
